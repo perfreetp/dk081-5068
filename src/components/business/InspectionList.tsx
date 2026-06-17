@@ -7,6 +7,8 @@ import type { InspectionItem, InspectionCategory } from '@/types';
 interface InspectionListProps {
   items: InspectionItem[];
   onChange?: (items: InspectionItem[]) => void;
+  onSave?: (items: InspectionItem[]) => void;
+  onSubmit?: (items: InspectionItem[], hasFailures: boolean) => void;
   readOnly?: boolean;
 }
 
@@ -22,7 +24,7 @@ const categoryColors: Record<InspectionCategory, string> = {
   function: 'bg-purple-50 text-purple-700 border-purple-200',
 };
 
-export function InspectionList({ items: initialItems, onChange, readOnly = false }: InspectionListProps) {
+export function InspectionList({ items: initialItems, onChange, onSave, onSubmit, readOnly = false }: InspectionListProps) {
   const [items, setItems] = useState<InspectionItem[]>(initialItems);
   const [expandedItem, setExpandedItem] = useState<string | null>(null);
 
@@ -230,10 +232,10 @@ export function InspectionList({ items: initialItems, onChange, readOnly = false
 
       {!readOnly && (
         <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
-          <Button variant="outline" disabled={!allChecked}>
+          <Button variant="outline" disabled={!allChecked} onClick={() => onSave?.(items)}>
             保存核验记录
           </Button>
-          <Button variant="accent" disabled={!allChecked}>
+          <Button variant="accent" disabled={!allChecked} onClick={() => onSubmit?.(items, hasFailures)}>
             {hasFailures ? '提交异常并发起售后' : '确认核验通过'}
           </Button>
         </div>

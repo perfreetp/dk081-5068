@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { Search, Package, Clock, Truck, CheckCircle, AlertTriangle, MessageSquare, FileText, Truck as TruckIcon } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Search, Package, Clock, Truck, CheckCircle, AlertTriangle, MessageSquare, FileText, Truck as TruckIcon, ClipboardCheck } from 'lucide-react';
 import { PageContainer } from '@/components/Layout/PageContainer';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/common/Card';
+import { Card, CardContent } from '@/components/common/Card';
 import { Button } from '@/components/common/Button';
 import { Input } from '@/components/common/Input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/common/Tabs';
@@ -12,14 +13,15 @@ import { ChatPanel } from '@/components/business/ChatPanel';
 import { Timeline } from '@/components/business/Timeline';
 import { InspectionList } from '@/components/business/InspectionList';
 import { SupplierRating } from '@/components/business/SupplierRating';
-import { useAppStore, getOrderById } from '@/store/appStore';
-import { mockOrders, mockLogisticsInfo } from '@/data/mockOrders';
+import { useAppStore, getOrderById, getInspectionByOrderId } from '@/store/appStore';
+import { mockLogisticsInfo } from '@/data/mockOrders';
 import { inspectionTemplates } from '@/data/mockAfterSales';
 import { OrderStatusLabels, type Order, type OrderStatus, type InspectionItem } from '@/types';
 import { formatPrice, formatDateTime } from '@/utils/format';
 
 export default function OrdersPage() {
-  const { orders, setSelectedOrderId, selectedOrderId } = useAppStore();
+  const navigate = useNavigate();
+  const { orders, setSelectedOrderId, selectedOrderId, addChatMessage, saveInspection, createAfterSaleFromInspection } = useAppStore();
   const [activeTab, setActiveTab] = useState<OrderStatus | 'all'>('all');
   const [searchKeyword, setSearchKeyword] = useState('');
   const [showDetailModal, setShowDetailModal] = useState(false);
@@ -27,6 +29,7 @@ export default function OrdersPage() {
   const [showInspectionModal, setShowInspectionModal] = useState(false);
   const [showRatingModal, setShowRatingModal] = useState(false);
   const [activeDetailTab, setActiveDetailTab] = useState('info');
+  const [inspectionItems, setInspectionItems] = useState<InspectionItem[]>([]);
 
   const filteredOrders = orders.filter(order => {
     const matchesStatus = activeTab === 'all' || order.status === activeTab;
@@ -66,7 +69,33 @@ export default function OrdersPage() {
 
   const handleInspection = (orderId: string) => {
     setSelectedOrderId(orderId);
+    const order = getOrderById(orderId);
+    if (order) {
+      setInspectionItems(getInspectionItems(order));
+    }
     setShowInspectionModal(true);
+  };
+
+  const handleSaveInspection = (items: InspectionItem[]) => {
+    if (selectedOrderId) {
+      saveInspection(selectedOrderId, items);
+    }
+    setShowInspectionModal(false);
+    setActiveDetailTab('inspection');
+    setShowDetailModal(true);
+  };
+
+  const handleSubmitInspection = (items: InspectionItem[], hasFailures: boolean) => {
+    if (!selectedOrderId) return;
+    saveInspection(selectedOrderId, items);
+    setShowInspectionModal(false);
+    if (hasFailures) {
+      createAfterSaleFromInspection(selectedOrderId, items);
+      navigate('/after-sales');
+    } else {
+      setActiveDetailTab('inspection');
+      setShowDetailModal(true);
+    }
   };
 
   const handleRating = (orderId: string) => {
@@ -172,6 +201,7 @@ export default function OrdersPage() {
                 <TabsTrigger value="info">订单信息</TabsTrigger>
                 <TabsTrigger value="logistics">物流信息</TabsTrigger>
                 <TabsTrigger value="chat">聊天记录</TabsTrigger>
+                <TabsTrigger value="inspection">收货核验</TabsTrigger>
                 <TabsTrigger value="adjustment">价格调整</TabsTrigger>
               </TabsList>
 
@@ -283,7 +313,65 @@ export default function OrdersPage() {
                   supplier={selectedOrder.quote.supplier}
                   orderId={selectedOrder.id}
                   messages={selectedOrder.chatMessages}
+                  onSend={(content, isPromise) => addChatMessage(selectedOrder.id, content, isPromise)}
                 />
+              </TabsContent>
+
+              <TabsContent value="inspection">
+                <Card>
+                  <CardContent className="p-6">
+                    {(() => {
+                      const savedInspection = getInspectionByOrderId(selectedOrder.id);
+                      if (savedInspection && savedInspection.length > 0) {
+                        const passCount = savedInspection.filter(i => i.passed === true).length;
+                        const failCount = savedInspection.filter(i => i.passed === false).length;
+                        const hasFailures = failCount > 0;
+                        return (
+                          <div className="space-y-4">
+                            <div className="flex items-center gap-4 p-4 bg-gray-50 border border-gray-200">
+                              <ClipboardCheck className={`w-8 h-8 ${hasFailures ? 'text-red-500' : 'text-green-500'}`} />
+                              <div className="flex-1">
+                                <div className="font-medium text-gray-900">
+                                  核验结果：{hasFailures ? '存在不合格项' : '全部通过'}
+                                </div>
+                                <div className="text-sm text-gray-500 mt-1">
+                                  通过 {passCount} 项 · 不通过 {failCount} 项 · 共 {savedInspection.length} 项
+                                </div>
+                              </div>
+                              {hasFailures && (
+                                <Button
+                                  variant="accent"
+                                  size="sm"
+                                  onClick={() => {
+                                    createAfterSaleFromInspection(selectedOrder.id, savedInspection);
+                                    navigate('/after-sales');
+                                  }}
+                                >
+                                  发起售后
+                                </Button>
+                              )}
+                            </div>
+                            <InspectionList items={savedInspection} readOnly />
+                          </div>
+                        );
+                      }
+                      return (
+                        <div className="text-center py-12 text-gray-500">
+                          <ClipboardCheck className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+                          <p className="mb-4">暂无核验记录</p>
+                          {selectedOrder.status === 'delivered' && (
+                            <Button
+                              variant="primary"
+                              onClick={() => { setShowDetailModal(false); handleInspection(selectedOrder.id); }}
+                            >
+                              开始收货核验
+                            </Button>
+                          )}
+                        </div>
+                      );
+                    })()}
+                  </CardContent>
+                </Card>
               </TabsContent>
 
               <TabsContent value="adjustment">
@@ -354,6 +442,7 @@ export default function OrdersPage() {
             supplier={selectedOrder.quote.supplier}
             orderId={selectedOrder.id}
             messages={selectedOrder.chatMessages}
+            onSend={(content, isPromise) => addChatMessage(selectedOrder.id, content, isPromise)}
           />
         )}
       </Modal>
@@ -379,8 +468,10 @@ export default function OrdersPage() {
               </div>
             </div>
             <InspectionList
-              items={getInspectionItems(selectedOrder)}
-              onChange={() => {}}
+              items={inspectionItems}
+              onChange={setInspectionItems}
+              onSave={handleSaveInspection}
+              onSubmit={handleSubmitInspection}
             />
           </div>
         )}

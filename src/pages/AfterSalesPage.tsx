@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Search, RefreshCw, AlertTriangle, CheckCircle, Clock, XCircle, ArrowRight, Package, MessageSquare, Plus } from 'lucide-react';
+import { Search, RefreshCw, AlertTriangle, CheckCircle, Clock, XCircle, ArrowRight, MessageSquare, Plus } from 'lucide-react';
 import { PageContainer } from '@/components/Layout/PageContainer';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/common/Card';
 import { Button } from '@/components/common/Button';
@@ -8,25 +8,27 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/common/Ta
 import { Badge } from '@/components/common/Badge';
 import { Modal } from '@/components/common/Modal';
 import { Select } from '@/components/common/Select';
+import { Upload } from '@/components/common/Upload';
 import { InspectionList } from '@/components/business/InspectionList';
 import { Timeline } from '@/components/business/Timeline';
 import { SupplierRating } from '@/components/business/SupplierRating';
 import { useAppStore, getAfterSaleById } from '@/store/appStore';
-import { mockAfterSales } from '@/data/mockAfterSales';
-import { AfterSaleStatusLabels, AfterSaleTypeLabels, type AfterSaleStatus, type AfterSale } from '@/types';
+import { AfterSaleStatusLabels, AfterSaleTypeLabels, type AfterSaleStatus, type AfterSaleType } from '@/types';
 import { formatPrice, formatDate, formatDateTime } from '@/utils/format';
 
 export default function AfterSalesPage() {
-  const { afterSales, selectedAfterSaleId, setSelectedAfterSaleId } = useAppStore();
+  const { afterSales, selectedAfterSaleId, setSelectedAfterSaleId, orders, createAfterSale } = useAppStore();
   const [activeTab, setActiveTab] = useState<AfterSaleStatus | 'all'>('all');
   const [searchKeyword, setSearchKeyword] = useState('');
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showRatingModal, setShowRatingModal] = useState(false);
   const [activeDetailTab, setActiveDetailTab] = useState('info');
-  const [afterSaleType, setAfterSaleType] = useState<'return' | 'exchange' | 'refund'>('return');
+  const [afterSaleType, setAfterSaleType] = useState<AfterSaleType>('return');
   const [afterSaleReason, setAfterSaleReason] = useState('');
   const [afterSaleDescription, setAfterSaleDescription] = useState('');
+  const [selectedOrderId, setSelectedOrderId] = useState('');
+  const [evidenceImages, setEvidenceImages] = useState<string[]>([]);
 
   const filteredAfterSales = afterSales.filter(afterSale => {
     const matchesStatus = activeTab === 'all' || afterSale.status === activeTab;
@@ -48,15 +50,26 @@ export default function AfterSalesPage() {
   };
 
   const handleCreateAfterSale = () => {
-    if (!afterSaleReason || !afterSaleDescription) {
-      alert('请填写售后原因和详细描述');
+    if (!selectedOrderId || !afterSaleReason || !afterSaleDescription) {
+      alert('请选择订单并填写售后原因和详细描述');
       return;
     }
-    alert(`售后申请已提交！\n类型: ${AfterSaleTypeLabels[afterSaleType]}\n原因: ${afterSaleReason}\n描述: ${afterSaleDescription}`);
+    const newId = createAfterSale({
+      orderId: selectedOrderId,
+      type: afterSaleType,
+      reason: afterSaleReason,
+      description: afterSaleDescription,
+      evidenceImages,
+    });
     setShowCreateModal(false);
     setAfterSaleType('return');
     setAfterSaleReason('');
     setAfterSaleDescription('');
+    setSelectedOrderId('');
+    setEvidenceImages([]);
+    setActiveTab('all');
+    setSelectedAfterSaleId(newId);
+    setShowDetailModal(true);
   };
 
   const statusConfig: Record<string, { icon: typeof Clock; color: string; variant: 'default' | 'primary' | 'accent' | 'success' | 'danger' }> = {
@@ -431,11 +444,14 @@ export default function AfterSalesPage() {
               <Select
                 label="选择订单"
                 options={[
-                  { value: 'ORD202401120001', label: 'ORD202401120001 - 前保险杠蒙皮 - ¥450' },
-                  { value: 'ORD202401080001', label: 'ORD202401080001 - 发动机机脚胶 - ¥280' },
+                  { value: '', label: '请选择订单' },
+                  ...orders.map(o => ({
+                    value: o.id,
+                    label: `${o.id} - ${o.quote.part.name} - ${formatPrice(o.finalPrice)}`,
+                  })),
                 ]}
-                value=""
-                onChange={() => {}}
+                value={selectedOrderId}
+                onChange={(e) => setSelectedOrderId(e.target.value)}
               />
               <Select
                 label="售后原因"
@@ -465,12 +481,11 @@ export default function AfterSalesPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   上传凭证照片
                 </label>
-                <div className="flex flex-wrap gap-2">
-                  <div className="w-20 h-20 border-2 border-dashed border-gray-300 hover:border-primary-500 flex flex-col items-center justify-center cursor-pointer transition-colors">
-                    <Plus className="w-6 h-6 text-gray-400" />
-                    <span className="text-xs text-gray-500">添加</span>
-                  </div>
-                </div>
+                <Upload
+                  maxFiles={6}
+                  initialImages={evidenceImages}
+                  onChange={(files) => setEvidenceImages(files.map(f => URL.createObjectURL(f)))}
+                />
               </div>
             </CardContent>
           </Card>
@@ -482,7 +497,7 @@ export default function AfterSalesPage() {
             <Button
               variant="accent"
               onClick={handleCreateAfterSale}
-              disabled={!afterSaleReason || !afterSaleDescription}
+              disabled={!selectedOrderId || !afterSaleReason || !afterSaleDescription}
             >
               提交申请
             </Button>

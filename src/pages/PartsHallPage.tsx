@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { Search, Filter, ArrowUpDown, RefreshCw, MessageSquare, Check, X } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Search, Filter, ArrowUpDown, RefreshCw, MessageSquare, Check, X, ShoppingCart } from 'lucide-react';
 import { PageContainer } from '@/components/Layout/PageContainer';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/common/Card';
+import { Card, CardContent } from '@/components/common/Card';
 import { Button } from '@/components/common/Button';
 import { Input } from '@/components/common/Input';
 import { Select } from '@/components/common/Select';
@@ -17,6 +18,7 @@ import type { PartCondition, PartCategory } from '@/types';
 import { formatPrice } from '@/utils/format';
 
 export default function PartsHallPage() {
+  const navigate = useNavigate();
   const {
     filters,
     setFilter,
@@ -29,7 +31,8 @@ export default function PartsHallPage() {
     negotiationQuoteId,
     openNegotiationModal,
     closeNegotiationModal,
-    quotes,
+    addNegotiationRecord,
+    createOrderFromQuote,
   } = useAppStore();
 
   const [searchKeyword, setSearchKeyword] = useState('');
@@ -51,10 +54,17 @@ export default function PartsHallPage() {
 
   const handleSubmitNegotiation = () => {
     if (!negotiatePrice || !currentQuote) return;
-    alert(`议价已发送: ${formatPrice(Number(negotiatePrice))}\n留言: ${negotiateMessage || '无'}`);
-    closeNegotiationModal();
+    addNegotiationRecord(currentQuote.id, Number(negotiatePrice), negotiateMessage);
     setNegotiatePrice('');
     setNegotiateMessage('');
+    closeNegotiationModal();
+  };
+
+  const handleOrder = (quoteId: string) => {
+    const orderId = createOrderFromQuote(quoteId);
+    if (orderId) {
+      navigate('/orders');
+    }
   };
 
   const conditionOptions = [
@@ -228,6 +238,7 @@ export default function PartsHallPage() {
             onSelect={() => toggleQuoteSelection(quote.id)}
             onNegotiate={() => openNegotiationModal(quote.id)}
             onChat={() => setShowChatModal(true)}
+            onOrder={() => handleOrder(quote.id)}
           />
         ))}
       </div>
