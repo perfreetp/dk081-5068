@@ -29,7 +29,12 @@ interface AppState {
   selectedOrderId: string | null;
   setSelectedOrderId: (id: string | null) => void;
   createOrderFromQuote: (quoteId: string) => string;
+  createOrdersFromQuotes: (quoteIds: string[]) => string[];
   addChatMessage: (orderId: string, content: string, isPromise: boolean, images?: string[]) => void;
+  payOrder: (orderId: string) => void;
+  shipOrder: (orderId: string, trackingCompany: string, trackingNumber: string) => void;
+  deliverOrder: (orderId: string) => void;
+  completeOrder: (orderId: string) => void;
 
   inspections: Record<string, InspectionItem[]>;
   saveInspection: (orderId: string, items: InspectionItem[]) => void;
@@ -39,6 +44,9 @@ interface AppState {
   setSelectedAfterSaleId: (id: string | null) => void;
   createAfterSale: (input: CreateAfterSaleInput) => string;
   createAfterSaleFromInspection: (orderId: string, items: InspectionItem[]) => string;
+  acceptAfterSale: (afterSaleId: string, note?: string) => void;
+  rejectAfterSale: (afterSaleId: string, reason: string) => void;
+  completeAfterSale: (afterSaleId: string, note?: string) => void;
 
   inquiries: Inquiry[];
 
@@ -139,6 +147,14 @@ export const useAppStore = create<AppState>((set, get) => ({
     }));
     return orderId;
   },
+  createOrdersFromQuotes: (quoteIds) => {
+    const orderIds: string[] = [];
+    quoteIds.forEach(quoteId => {
+      const orderId = get().createOrderFromQuote(quoteId);
+      if (orderId) orderIds.push(orderId);
+    });
+    return orderIds;
+  },
   addChatMessage: (orderId, content, isPromise, images = []) => {
     const buyer = mockBuyer;
     const msg: ChatMessage = {
@@ -155,6 +171,116 @@ export const useAppStore = create<AppState>((set, get) => ({
       orders: state.orders.map(o =>
         o.id === orderId
           ? { ...o, chatMessages: [...o.chatMessages, msg] }
+          : o
+      ),
+    }));
+  },
+
+  payOrder: (orderId) => {
+    const now = new Date();
+    set((state) => ({
+      orders: state.orders.map(o =>
+        o.id === orderId
+          ? {
+              ...o,
+              status: 'pending_shipment' as OrderStatus,
+              paidAt: now,
+              chatMessages: [
+                ...o.chatMessages,
+                {
+                  id: genId('m'),
+                  orderId,
+                  senderType: 'system',
+                  senderName: '系统',
+                  content: '订单已支付，等待商家发货',
+                  images: [],
+                  isPromise: false,
+                  createdAt: now,
+                },
+              ],
+            }
+          : o
+      ),
+    }));
+  },
+  shipOrder: (orderId, trackingCompany, trackingNumber) => {
+    const now = new Date();
+    const order = get().orders.find(o => o.id === orderId);
+    if (!order) return;
+    const newLogistics: ChatMessage = {
+      id: genId('m'),
+      orderId,
+      senderType: 'system',
+      senderName: '系统',
+      content: `商家已发货，物流公司：${trackingCompany}，运单号：${trackingNumber}`,
+      images: [],
+      isPromise: false,
+      createdAt: now,
+    };
+    set((state) => ({
+      orders: state.orders.map(o =>
+        o.id === orderId
+          ? {
+              ...o,
+              status: 'shipped' as OrderStatus,
+              trackingCompany,
+              trackingNumber,
+              shippedAt: now,
+              chatMessages: [...o.chatMessages, newLogistics],
+            }
+          : o
+      ),
+    }));
+  },
+  deliverOrder: (orderId) => {
+    const now = new Date();
+    set((state) => ({
+      orders: state.orders.map(o =>
+        o.id === orderId
+          ? {
+              ...o,
+              status: 'delivered' as OrderStatus,
+              actualDeliveryDate: now,
+              chatMessages: [
+                ...o.chatMessages,
+                {
+                  id: genId('m'),
+                  orderId,
+                  senderType: 'system',
+                  senderName: '系统',
+                  content: '商品已送达，请进行收货核验',
+                  images: [],
+                  isPromise: false,
+                  createdAt: now,
+                },
+              ],
+            }
+          : o
+      ),
+    }));
+  },
+  completeOrder: (orderId) => {
+    const now = new Date();
+    set((state) => ({
+      orders: state.orders.map(o =>
+        o.id === orderId
+          ? {
+              ...o,
+              status: 'completed' as OrderStatus,
+              chatMessages: [
+                ...o.chatMessages,
+                {
+                  id: genId('m'),
+                  orderId,
+                  senderType: 'system',
+                  senderName: '系统',
+                  content: '订单已完成',
+                  images: [],
+                  isPromise: false,
+                  createdAt: now,
+                },
+              ],
+            }
           : o
       ),
     }));
@@ -235,6 +361,86 @@ export const useAppStore = create<AppState>((set, get) => ({
       evidenceImages,
       inspectionItems: items,
     });
+  },
+
+  acceptAfterSale: (afterSaleId, note) => {
+    const now = new Date();
+    const afterSale = get().afterSales.find(a => a.id === afterSaleId);
+    if (!afterSale) return;
+    const timelineItem: AfterSaleTimelineItem = {
+      id: genId('t'),
+      status: '商家已同意',
+      description: afterSale.type === 'return'
+        ? `商家已同意退货退款${note ? `，备注：${note}` : '，请寄回商品'}`
+        : afterSale.type === 'exchange'
+        ? `商家已同意换货${note ? `，备注：${note}` : '，将尽快安排发货'}`
+        : `商家已同意仅退款${note ? `，备注：${note}` : ''}`,
+      operator: afterSale.supplierName,
+      time: now,
+    };
+    set((state) => ({
+      afterSales: state.afterSales.map(a =>
+        a.id === afterSaleId
+          ? { ...a, status: 'accepted', timeline: [...a.timeline, timelineItem], updatedAt: now }
+          : a
+      ),
+    }));
+  },
+  rejectAfterSale: (afterSaleId, reason) => {
+    const now = new Date();
+    const afterSale = get().afterSales.find(a => a.id === afterSaleId);
+    if (!afterSale) return;
+    const timelineItem: AfterSaleTimelineItem = {
+      id: genId('t'),
+      status: '商家已拒绝',
+      description: `商家拒绝了售后申请，原因：${reason}`,
+      operator: afterSale.supplierName,
+      time: now,
+    };
+    set((state) => ({
+      afterSales: state.afterSales.map(a =>
+        a.id === afterSaleId
+          ? { ...a, status: 'rejected', timeline: [...a.timeline, timelineItem], updatedAt: now }
+          : a
+      ),
+    }));
+    if (afterSale) {
+      set((state) => ({
+        orders: state.orders.map(o =>
+          o.id === afterSale.orderId ? { ...o, status: 'completed' as OrderStatus } : o
+        ),
+      }));
+    }
+  },
+  completeAfterSale: (afterSaleId, note) => {
+    const now = new Date();
+    const afterSale = get().afterSales.find(a => a.id === afterSaleId);
+    if (!afterSale) return;
+    const timelineItem: AfterSaleTimelineItem = {
+      id: genId('t'),
+      status: '售后已完成',
+      description: afterSale.type === 'return'
+        ? `退款已完成${note ? `，备注：${note}` : ''}`
+        : afterSale.type === 'exchange'
+        ? `换货已完成${note ? `，备注：${note}` : ''}`
+        : `退款已完成${note ? `，备注：${note}` : ''}`,
+      operator: '系统',
+      time: now,
+    };
+    set((state) => ({
+      afterSales: state.afterSales.map(a =>
+        a.id === afterSaleId
+          ? { ...a, status: 'completed', timeline: [...a.timeline, timelineItem], updatedAt: now }
+          : a
+      ),
+    }));
+    if (afterSale) {
+      set((state) => ({
+        orders: state.orders.map(o =>
+          o.id === afterSale.orderId ? { ...o, status: 'completed' as OrderStatus } : o
+        ),
+      }));
+    }
   },
 
   inquiries: mockInquiries,

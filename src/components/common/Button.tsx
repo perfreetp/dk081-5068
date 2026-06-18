@@ -3,7 +3,7 @@ import { twMerge } from 'tailwind-merge';
 import { Loader2 } from 'lucide-react';
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: 'primary' | 'secondary' | 'accent' | 'outline' | 'ghost' | 'danger';
+  variant?: 'primary' | 'secondary' | 'accent' | 'outline' | 'ghost' | 'danger' | 'success';
   size?: 'sm' | 'md' | 'lg';
   loading?: boolean;
   icon?: ReactNode;
@@ -28,6 +28,7 @@ export function Button({
     outline: 'bg-transparent border-primary-600 text-primary-600 hover:bg-primary-50',
     ghost: 'bg-transparent border-transparent text-gray-600 hover:bg-gray-100',
     danger: 'bg-red-600 border-red-600 text-white hover:bg-red-700 hover:border-red-700 focus:ring-red-500',
+    success: 'bg-green-600 border-green-600 text-white hover:bg-green-700 hover:border-green-700 focus:ring-green-500',
   };
 
   const sizes = {

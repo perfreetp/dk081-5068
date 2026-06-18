@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Package, Clock, Truck, CheckCircle, AlertTriangle, MessageSquare, FileText, Truck as TruckIcon, ClipboardCheck } from 'lucide-react';
+import { Search, Package, Clock, Truck, CheckCircle, AlertTriangle, MessageSquare, FileText, Truck as TruckIcon, ClipboardCheck, CreditCard, Ship, ArrowRight } from 'lucide-react';
 import { PageContainer } from '@/components/Layout/PageContainer';
-import { Card, CardContent } from '@/components/common/Card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/common/Card';
 import { Button } from '@/components/common/Button';
-import { Input } from '@/components/common/Input';
+import { Input, Textarea } from '@/components/common/Input';
+import { Select } from '@/components/common/Select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/common/Tabs';
 import { Modal } from '@/components/common/Modal';
 import { Badge } from '@/components/common/Badge';
@@ -21,15 +22,19 @@ import { formatPrice, formatDateTime } from '@/utils/format';
 
 export default function OrdersPage() {
   const navigate = useNavigate();
-  const { orders, setSelectedOrderId, selectedOrderId, addChatMessage, saveInspection, createAfterSaleFromInspection } = useAppStore();
+  const { orders, setSelectedOrderId, selectedOrderId, addChatMessage, saveInspection, createAfterSaleFromInspection, payOrder, shipOrder, deliverOrder, completeOrder } = useAppStore();
   const [activeTab, setActiveTab] = useState<OrderStatus | 'all'>('all');
   const [searchKeyword, setSearchKeyword] = useState('');
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [showChatModal, setShowChatModal] = useState(false);
   const [showInspectionModal, setShowInspectionModal] = useState(false);
   const [showRatingModal, setShowRatingModal] = useState(false);
+  const [showPayModal, setShowPayModal] = useState(false);
+  const [showShipModal, setShowShipModal] = useState(false);
   const [activeDetailTab, setActiveDetailTab] = useState('info');
   const [inspectionItems, setInspectionItems] = useState<InspectionItem[]>([]);
+  const [trackingCompany, setTrackingCompany] = useState('');
+  const [trackingNumber, setTrackingNumber] = useState('');
 
   const filteredOrders = orders.filter(order => {
     const matchesStatus = activeTab === 'all' || order.status === activeTab;
@@ -103,6 +108,44 @@ export default function OrdersPage() {
     setShowRatingModal(true);
   };
 
+  const handlePay = (orderId: string) => {
+    setSelectedOrderId(orderId);
+    setShowPayModal(true);
+  };
+
+  const handleConfirmPay = () => {
+    if (selectedOrderId) {
+      payOrder(selectedOrderId);
+      setShowPayModal(false);
+    }
+  };
+
+  const handleShip = (orderId: string) => {
+    setSelectedOrderId(orderId);
+    setTrackingCompany('');
+    setTrackingNumber('');
+    setShowShipModal(true);
+  };
+
+  const handleConfirmShip = () => {
+    if (selectedOrderId && trackingCompany && trackingNumber) {
+      shipOrder(selectedOrderId, trackingCompany, trackingNumber);
+      setShowShipModal(false);
+    }
+  };
+
+  const handleDeliver = (orderId: string) => {
+    deliverOrder(orderId);
+  };
+
+  const handleComplete = (orderId: string) => {
+    completeOrder(orderId);
+  };
+
+  const handleAfterSale = (orderId: string) => {
+    navigate('/after-sales');
+  };
+
   const tabItems = [
     { value: 'all', label: '全部订单', icon: FileText, count: orders.length },
     { value: 'pending_payment', label: '待付款', icon: Clock, count: orders.filter(o => o.status === 'pending_payment').length },
@@ -153,6 +196,12 @@ export default function OrdersPage() {
                 order={order}
                 onClick={() => handleOrderClick(order.id)}
                 onChat={() => handleChat(order.id)}
+                onPay={() => handlePay(order.id)}
+                onShip={() => handleShip(order.id)}
+                onDeliver={() => handleDeliver(order.id)}
+                onComplete={() => handleOrderClick(order.id)}
+                onInspection={() => handleInspection(order.id)}
+                onAfterSale={() => handleAfterSale(order.id)}
               />
             ))}
           </div>
@@ -409,14 +458,26 @@ export default function OrdersPage() {
                 关闭
               </Button>
               {selectedOrder.status === 'pending_payment' && (
-                <Button variant="accent">立即付款</Button>
+                <Button variant="accent" onClick={() => { setShowDetailModal(false); handlePay(selectedOrder.id); }}>
+                  立即付款
+                </Button>
+              )}
+              {selectedOrder.status === 'pending_shipment' && (
+                <Button variant="accent" onClick={() => { setShowDetailModal(false); handleShip(selectedOrder.id); }}>
+                  模拟发货
+                </Button>
+              )}
+              {selectedOrder.status === 'shipped' && (
+                <Button variant="accent" onClick={() => { handleDeliver(selectedOrder.id); }}>
+                  确认收货
+                </Button>
               )}
               {selectedOrder.status === 'delivered' && (
                 <>
                   <Button variant="outline" onClick={() => { setShowDetailModal(false); handleInspection(selectedOrder.id); }}>
                     收货核验
                   </Button>
-                  <Button variant="accent" onClick={() => { setShowDetailModal(false); handleInspection(selectedOrder.id); }}>
+                  <Button variant="accent" onClick={() => { setShowDetailModal(false); handleAfterSale(selectedOrder.id); }}>
                     发起售后
                   </Button>
                 </>
@@ -491,6 +552,90 @@ export default function OrdersPage() {
               setShowRatingModal(false);
             }}
           />
+        )}
+      </Modal>
+
+      <Modal
+        open={showPayModal}
+        onClose={() => setShowPayModal(false)}
+        title="确认支付"
+        size="md"
+      >
+        {selectedOrder && (
+          <div className="space-y-6">
+            <div className="p-6 bg-yellow-50 border border-yellow-200 text-center">
+              <div className="text-sm text-gray-500 mb-2">订单金额</div>
+              <div className="text-4xl font-bold text-accent-600">{formatPrice(selectedOrder.finalPrice)}</div>
+              <div className="text-sm text-gray-500 mt-2">订单号: {selectedOrder.id}</div>
+            </div>
+            <div className="p-4 bg-gray-50 border border-gray-200">
+              <div className="flex items-center gap-3 mb-3">
+                <img src={selectedOrder.quote.part.images[0]} alt="" className="w-16 h-16 object-cover border border-gray-200" />
+                <div>
+                  <div className="font-medium text-gray-900">{selectedOrder.quote.part.name}</div>
+                  <div className="text-sm text-gray-500">供应商: {selectedOrder.quote.supplier.companyName}</div>
+                </div>
+              </div>
+            </div>
+            <div className="flex justify-end gap-3">
+              <Button variant="secondary" onClick={() => setShowPayModal(false)}>
+                取消
+              </Button>
+              <Button variant="accent" onClick={handleConfirmPay} icon={<CreditCard className="w-4 h-4" />}>
+                确认支付
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      <Modal
+        open={showShipModal}
+        onClose={() => setShowShipModal(false)}
+        title="模拟商家发货"
+        size="md"
+      >
+        {selectedOrder && (
+          <div className="space-y-6">
+            <div className="p-4 bg-blue-50 border border-blue-200">
+              <div className="flex items-center gap-3">
+                <Ship className="w-8 h-8 text-blue-600" />
+                <div>
+                  <div className="font-medium text-gray-900">订单: {selectedOrder.id}</div>
+                  <div className="text-sm text-gray-500">{selectedOrder.quote.part.name}</div>
+                </div>
+              </div>
+            </div>
+            <div className="space-y-4">
+              <Select
+                label="物流公司"
+                options={[
+                  { value: '', label: '请选择物流公司' },
+                  { value: '顺丰速运', label: '顺丰速运' },
+                  { value: '京东物流', label: '京东物流' },
+                  { value: '德邦快递', label: '德邦快递' },
+                  { value: '壹米滴答', label: '壹米滴答' },
+                  { value: '中通快运', label: '中通快运' },
+                ]}
+                value={trackingCompany}
+                onChange={(e) => setTrackingCompany(e.target.value)}
+              />
+              <Input
+                label="运单号"
+                placeholder="请输入运单号"
+                value={trackingNumber}
+                onChange={(e) => setTrackingNumber(e.target.value)}
+              />
+            </div>
+            <div className="flex justify-end gap-3">
+              <Button variant="secondary" onClick={() => setShowShipModal(false)}>
+                取消
+              </Button>
+              <Button variant="accent" onClick={handleConfirmShip} icon={<Truck className="w-4 h-4" />} disabled={!trackingCompany || !trackingNumber}>
+                确认发货
+              </Button>
+            </div>
+          </div>
         )}
       </Modal>
     </PageContainer>

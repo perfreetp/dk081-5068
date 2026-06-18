@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import { Search, RefreshCw, AlertTriangle, CheckCircle, Clock, XCircle, ArrowRight, MessageSquare, Plus } from 'lucide-react';
+import { Search, RefreshCw, AlertTriangle, CheckCircle, Clock, XCircle, ArrowRight, MessageSquare, Plus, Check, X, ThumbsUp, ThumbsDown } from 'lucide-react';
 import { PageContainer } from '@/components/Layout/PageContainer';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/common/Card';
 import { Button } from '@/components/common/Button';
-import { Input } from '@/components/common/Input';
+import { Input, Textarea } from '@/components/common/Input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/common/Tabs';
 import { Badge } from '@/components/common/Badge';
 import { Modal } from '@/components/common/Modal';
@@ -17,18 +17,23 @@ import { AfterSaleStatusLabels, AfterSaleTypeLabels, type AfterSaleStatus, type 
 import { formatPrice, formatDate, formatDateTime } from '@/utils/format';
 
 export default function AfterSalesPage() {
-  const { afterSales, selectedAfterSaleId, setSelectedAfterSaleId, orders, createAfterSale } = useAppStore();
+  const { afterSales, selectedAfterSaleId, setSelectedAfterSaleId, orders, createAfterSale, acceptAfterSale, rejectAfterSale, completeAfterSale } = useAppStore();
   const [activeTab, setActiveTab] = useState<AfterSaleStatus | 'all'>('all');
   const [searchKeyword, setSearchKeyword] = useState('');
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showRatingModal, setShowRatingModal] = useState(false);
+  const [showAcceptModal, setShowAcceptModal] = useState(false);
+  const [showRejectModal, setShowRejectModal] = useState(false);
+  const [showCompleteModal, setShowCompleteModal] = useState(false);
   const [activeDetailTab, setActiveDetailTab] = useState('info');
   const [afterSaleType, setAfterSaleType] = useState<AfterSaleType>('return');
   const [afterSaleReason, setAfterSaleReason] = useState('');
   const [afterSaleDescription, setAfterSaleDescription] = useState('');
   const [selectedOrderId, setSelectedOrderId] = useState('');
   const [evidenceImages, setEvidenceImages] = useState<string[]>([]);
+  const [rejectReason, setRejectReason] = useState('');
+  const [handleNote, setHandleNote] = useState('');
 
   const filteredAfterSales = afterSales.filter(afterSale => {
     const matchesStatus = activeTab === 'all' || afterSale.status === activeTab;
@@ -70,6 +75,45 @@ export default function AfterSalesPage() {
     setActiveTab('all');
     setSelectedAfterSaleId(newId);
     setShowDetailModal(true);
+  };
+
+  const handleAccept = (afterSaleId: string) => {
+    setSelectedAfterSaleId(afterSaleId);
+    setHandleNote('');
+    setShowAcceptModal(true);
+  };
+
+  const handleConfirmAccept = () => {
+    if (selectedAfterSaleId) {
+      acceptAfterSale(selectedAfterSaleId, handleNote || undefined);
+      setShowAcceptModal(false);
+    }
+  };
+
+  const handleReject = (afterSaleId: string) => {
+    setSelectedAfterSaleId(afterSaleId);
+    setRejectReason('');
+    setShowRejectModal(true);
+  };
+
+  const handleConfirmReject = () => {
+    if (selectedAfterSaleId && rejectReason) {
+      rejectAfterSale(selectedAfterSaleId, rejectReason);
+      setShowRejectModal(false);
+    }
+  };
+
+  const handleComplete = (afterSaleId: string) => {
+    setSelectedAfterSaleId(afterSaleId);
+    setHandleNote('');
+    setShowCompleteModal(true);
+  };
+
+  const handleConfirmComplete = () => {
+    if (selectedAfterSaleId) {
+      completeAfterSale(selectedAfterSaleId, handleNote || undefined);
+      setShowCompleteModal(false);
+    }
   };
 
   const statusConfig: Record<string, { icon: typeof Clock; color: string; variant: 'default' | 'primary' | 'accent' | 'success' | 'danger' }> = {
@@ -388,6 +432,21 @@ export default function AfterSalesPage() {
               <Button variant="secondary" onClick={() => setShowDetailModal(false)}>
                 关闭
               </Button>
+              {selectedAfterSale.status === 'pending' && (
+                <>
+                  <Button variant="danger" onClick={() => { setShowDetailModal(false); handleReject(selectedAfterSale.id); }} icon={<ThumbsDown className="w-4 h-4" />}>
+                    拒绝申请
+                  </Button>
+                  <Button variant="success" onClick={() => { setShowDetailModal(false); handleAccept(selectedAfterSale.id); }} icon={<ThumbsUp className="w-4 h-4" />}>
+                    同意{selectedAfterSale.type === 'return' ? '退货' : selectedAfterSale.type === 'exchange' ? '换货' : '退款'}
+                  </Button>
+                </>
+              )}
+              {selectedAfterSale.status === 'accepted' && (
+                <Button variant="accent" onClick={() => { setShowDetailModal(false); handleComplete(selectedAfterSale.id); }} icon={<Check className="w-4 h-4" />}>
+                  确认{selectedAfterSale.type === 'return' ? '退款' : selectedAfterSale.type === 'exchange' ? '换货发货' : '退款'}完成
+                </Button>
+              )}
               {selectedAfterSale.status === 'completed' && (
                 <Button
                   variant="primary"
@@ -518,6 +577,142 @@ export default function AfterSalesPage() {
             setShowRatingModal(false);
           }}
         />
+      </Modal>
+
+      <Modal
+        open={showAcceptModal}
+        onClose={() => setShowAcceptModal(false)}
+        title="同意售后申请"
+        size="md"
+      >
+        {selectedAfterSaleId && getAfterSaleById(selectedAfterSaleId) && (
+          <div className="space-y-6">
+            <div className="p-4 bg-green-50 border border-green-200">
+              <div className="flex items-start gap-3">
+                <ThumbsUp className="w-8 h-8 text-green-600 flex-shrink-0 mt-1" />
+                <div>
+                  <div className="font-medium text-gray-900 mb-1">
+                    {getAfterSaleById(selectedAfterSaleId)!.type === 'return' ? '同意退货退款' :
+                     getAfterSaleById(selectedAfterSaleId)!.type === 'exchange' ? '同意换货' : '同意仅退款'}
+                  </div>
+                  <div className="text-sm text-gray-600">
+                    售后单: {getAfterSaleById(selectedAfterSaleId)!.id.toUpperCase()}
+                  </div>
+                  <div className="text-sm text-gray-600">
+                    配件: {getAfterSaleById(selectedAfterSaleId)!.partName}
+                  </div>
+                  {getAfterSaleById(selectedAfterSaleId)!.refundAmount && (
+                    <div className="text-lg font-bold text-accent-600 mt-2">
+                      退款金额: {formatPrice(getAfterSaleById(selectedAfterSaleId)!.refundAmount!)}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+            <Textarea
+              label="备注（可选）"
+              placeholder="填写处理备注，如退款时间、退货地址等信息..."
+              value={handleNote}
+              onChange={(e) => setHandleNote(e.target.value)}
+              rows={3}
+            />
+            <div className="flex justify-end gap-3">
+              <Button variant="secondary" onClick={() => setShowAcceptModal(false)}>
+                取消
+              </Button>
+              <Button variant="success" onClick={handleConfirmAccept}>
+                确认同意
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      <Modal
+        open={showRejectModal}
+        onClose={() => setShowRejectModal(false)}
+        title="拒绝售后申请"
+        size="md"
+      >
+        {selectedAfterSaleId && getAfterSaleById(selectedAfterSaleId) && (
+          <div className="space-y-6">
+            <div className="p-4 bg-red-50 border border-red-200">
+              <div className="flex items-start gap-3">
+                <ThumbsDown className="w-8 h-8 text-red-600 flex-shrink-0 mt-1" />
+                <div>
+                  <div className="font-medium text-gray-900 mb-1">拒绝售后申请</div>
+                  <div className="text-sm text-gray-600">
+                    售后单: {getAfterSaleById(selectedAfterSaleId)!.id.toUpperCase()}
+                  </div>
+                  <div className="text-sm text-gray-600">
+                    配件: {getAfterSaleById(selectedAfterSaleId)!.partName}
+                  </div>
+                </div>
+              </div>
+            </div>
+            <Textarea
+              label="拒绝原因 *"
+              placeholder="请详细说明拒绝售后申请的原因..."
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+              rows={4}
+            />
+            <div className="flex justify-end gap-3">
+              <Button variant="secondary" onClick={() => setShowRejectModal(false)}>
+                取消
+              </Button>
+              <Button variant="danger" onClick={handleConfirmReject} disabled={!rejectReason}>
+                确认拒绝
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      <Modal
+        open={showCompleteModal}
+        onClose={() => setShowCompleteModal(false)}
+        title="确认售后完成"
+        size="md"
+      >
+        {selectedAfterSaleId && getAfterSaleById(selectedAfterSaleId) && (
+          <div className="space-y-6">
+            <div className="p-4 bg-accent-50 border border-accent-200">
+              <div className="flex items-start gap-3">
+                <Check className="w-8 h-8 text-accent-600 flex-shrink-0 mt-1" />
+                <div>
+                  <div className="font-medium text-gray-900 mb-1">
+                    {getAfterSaleById(selectedAfterSaleId)!.type === 'return' ? '确认退款完成' :
+                     getAfterSaleById(selectedAfterSaleId)!.type === 'exchange' ? '确认换货完成' : '确认退款完成'}
+                  </div>
+                  <div className="text-sm text-gray-600">
+                    售后单: {getAfterSaleById(selectedAfterSaleId)!.id.toUpperCase()}
+                  </div>
+                  {getAfterSaleById(selectedAfterSaleId)!.refundAmount && (
+                    <div className="text-lg font-bold text-accent-600 mt-2">
+                      退款金额: {formatPrice(getAfterSaleById(selectedAfterSaleId)!.refundAmount!)}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+            <Textarea
+              label="备注（可选）"
+              placeholder="填写处理备注..."
+              value={handleNote}
+              onChange={(e) => setHandleNote(e.target.value)}
+              rows={3}
+            />
+            <div className="flex justify-end gap-3">
+              <Button variant="secondary" onClick={() => setShowCompleteModal(false)}>
+                取消
+              </Button>
+              <Button variant="accent" onClick={handleConfirmComplete}>
+                确认完成
+              </Button>
+            </div>
+          </div>
+        )}
       </Modal>
     </PageContainer>
   );

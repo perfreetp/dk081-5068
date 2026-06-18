@@ -33,6 +33,7 @@ export default function PartsHallPage() {
     closeNegotiationModal,
     addNegotiationRecord,
     createOrderFromQuote,
+    createOrdersFromQuotes,
   } = useAppStore();
 
   const [searchKeyword, setSearchKeyword] = useState('');
@@ -259,6 +260,11 @@ export default function PartsHallPage() {
           quoteIds={selectedQuotes}
           onClose={clearQuoteSelection}
           onRemove={toggleQuoteSelection}
+          onOrder={(quoteId) => handleOrder(quoteId)}
+          onBatchOrder={(quoteIds) => {
+            createOrdersFromQuotes(quoteIds);
+            navigate('/orders');
+          }}
         />
       )}
 

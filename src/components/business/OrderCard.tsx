@@ -8,6 +8,12 @@ interface OrderCardProps {
   order: Order;
   onClick?: () => void;
   onChat?: () => void;
+  onPay?: () => void;
+  onShip?: () => void;
+  onDeliver?: () => void;
+  onComplete?: () => void;
+  onInspection?: () => void;
+  onAfterSale?: () => void;
 }
 
 const statusConfig: Record<string, { icon: typeof Package; color: string; bgColor: string }> = {
@@ -19,7 +25,7 @@ const statusConfig: Record<string, { icon: typeof Package; color: string; bgColo
   after_sale: { icon: AlertTriangle, color: 'text-red-600', bgColor: 'bg-red-50' },
 };
 
-export function OrderCard({ order, onClick, onChat }: OrderCardProps) {
+export function OrderCard({ order, onClick, onChat, onPay, onShip, onDeliver, onComplete, onInspection, onAfterSale }: OrderCardProps) {
   const config = statusConfig[order.status] || statusConfig.pending_payment;
   const StatusIcon = config.icon;
 
@@ -119,23 +125,33 @@ export function OrderCard({ order, onClick, onChat }: OrderCardProps) {
 
           <div className="flex flex-col items-end gap-3 flex-shrink-0">
             {order.status === 'pending_payment' && (
-              <Button variant="accent" size="sm" onClick={(e) => e.stopPropagation()}>
+              <Button variant="accent" size="sm" onClick={(e) => { e.stopPropagation(); onPay?.(); }}>
                 立即付款
+              </Button>
+            )}
+            {order.status === 'pending_shipment' && (
+              <Button variant="accent" size="sm" onClick={(e) => { e.stopPropagation(); onShip?.(); }}>
+                模拟发货
+              </Button>
+            )}
+            {order.status === 'shipped' && (
+              <Button variant="accent" size="sm" onClick={(e) => { e.stopPropagation(); onDeliver?.(); }}>
+                确认收货
               </Button>
             )}
             {order.status === 'delivered' && (
               <>
-                <Button variant="accent" size="sm" onClick={(e) => e.stopPropagation()}>
+                <Button variant="accent" size="sm" onClick={(e) => { e.stopPropagation(); onInspection?.(); }}>
                   收货核验
                 </Button>
-                <Button variant="outline" size="sm" onClick={(e) => e.stopPropagation()}>
+                <Button variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); onAfterSale?.(); }}>
                   申请售后
                 </Button>
               </>
             )}
             {order.status === 'completed' && (
-              <Button variant="outline" size="sm" onClick={(e) => e.stopPropagation()}>
-                评价
+              <Button variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); onComplete?.(); }}>
+                查看详情
               </Button>
             )}
             {order.trackingNumber && (

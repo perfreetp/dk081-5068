@@ -10,10 +10,12 @@ interface ComparePanelProps {
   quoteIds?: string[];
   onClose?: () => void;
   onRemove?: (quoteId: string) => void;
+  onOrder?: (quoteId: string) => void;
+  onBatchOrder?: (quoteIds: string[]) => void;
 }
 
-export function ComparePanel({ quoteIds, onClose, onRemove }: ComparePanelProps) {
-  const { selectedQuotes, clearQuoteSelection, toggleQuoteSelection } = useAppStore();
+export function ComparePanel({ quoteIds, onClose, onRemove, onOrder, onBatchOrder }: ComparePanelProps) {
+  const { selectedQuotes, clearQuoteSelection, toggleQuoteSelection, createOrdersFromQuotes } = useAppStore();
   const finalQuoteIds = quoteIds ?? selectedQuotes;
   const selectedQuoteObjects = finalQuoteIds.map(id => getQuoteById(id)).filter(Boolean) as Quote[];
 
@@ -32,6 +34,18 @@ export function ComparePanel({ quoteIds, onClose, onRemove }: ComparePanelProps)
       onRemove(quoteId);
     } else {
       toggleQuoteSelection(quoteId);
+    }
+  };
+
+  const handleOrder = (quoteId: string) => {
+    if (onOrder) {
+      onOrder(quoteId);
+    }
+  };
+
+  const handleBatchOrder = () => {
+    if (onBatchOrder) {
+      onBatchOrder(finalQuoteIds);
     }
   };
 
@@ -66,8 +80,8 @@ export function ComparePanel({ quoteIds, onClose, onRemove }: ComparePanelProps)
             <ChevronDown className="w-4 h-4 mr-1" />
             收起对比
           </Button>
-          <Button variant="accent" size="sm" icon={<ShoppingCart className="w-4 h-4" />}>
-            批量下单
+          <Button variant="accent" size="sm" icon={<ShoppingCart className="w-4 h-4" />} onClick={handleBatchOrder}>
+            批量下单 ({finalQuoteIds.length})
           </Button>
         </div>
       </div>
@@ -190,7 +204,7 @@ export function ComparePanel({ quoteIds, onClose, onRemove }: ComparePanelProps)
               {selectedQuoteObjects.map(quote => (
                 quote && (
                   <td key={quote.id} className="px-4 py-3 text-center border-r border-gray-100">
-                    <Button variant="accent" size="sm" className="w-full">
+                    <Button variant="accent" size="sm" className="w-full" onClick={() => handleOrder(quote.id)}>
                       立即下单
                     </Button>
                   </td>
