@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Filter, ArrowUpDown, RefreshCw, MessageSquare, Check, X, ShoppingCart } from 'lucide-react';
+import { Search, Filter, ArrowUpDown, RefreshCw, MessageSquare, Check, X, ShoppingCart, CheckCircle } from 'lucide-react';
 import { PageContainer } from '@/components/Layout/PageContainer';
 import { Card, CardContent } from '@/components/common/Card';
 import { Button } from '@/components/common/Button';
@@ -40,6 +40,7 @@ export default function PartsHallPage() {
   const [showChatModal, setShowChatModal] = useState(false);
   const [negotiatePrice, setNegotiatePrice] = useState('');
   const [negotiateMessage, setNegotiateMessage] = useState('');
+  const [batchOrderResult, setBatchOrderResult] = useState<{ orderId: string; partName: string; supplier: string; price: number }[] | null>(null);
 
   const filteredQuotes = getFilteredQuotes().filter(q => {
     if (!searchKeyword) return true;
@@ -262,8 +263,18 @@ export default function PartsHallPage() {
           onRemove={toggleQuoteSelection}
           onOrder={(quoteId) => handleOrder(quoteId)}
           onBatchOrder={(quoteIds) => {
-            createOrdersFromQuotes(quoteIds);
-            navigate('/orders');
+            const orderIds = createOrdersFromQuotes(quoteIds);
+            const results = orderIds.map(oid => {
+              const order = useAppStore.getState().orders.find(o => o.id === oid);
+              return {
+                orderId: oid,
+                partName: order?.quote.part.name || '未知配件',
+                supplier: order?.quote.supplier.companyName || '未知供应商',
+                price: order?.finalPrice || 0,
+              };
+            });
+            setBatchOrderResult(results);
+            clearQuoteSelection();
           }}
         />
       )}
@@ -382,6 +393,55 @@ export default function PartsHallPage() {
             supplier={currentQuote.supplier}
             orderId={currentQuote.inquiryId}
           />
+        )}
+      </Modal>
+
+      <Modal
+        open={!!batchOrderResult}
+        onClose={() => setBatchOrderResult(null)}
+        title="批量下单结果"
+        size="md"
+      >
+        {batchOrderResult && (
+          <div className="space-y-6">
+            <div className="p-4 bg-green-50 border border-green-200 flex items-center gap-3">
+              <CheckCircle className="w-8 h-8 text-green-600 flex-shrink-0" />
+              <div>
+                <div className="font-medium text-gray-900">
+                  成功生成 {batchOrderResult.length} 个订单
+                </div>
+                <div className="text-sm text-gray-600">
+                  总金额：{formatPrice(batchOrderResult.reduce((sum, r) => sum + r.price, 0))}
+                </div>
+              </div>
+            </div>
+            <div className="space-y-2 max-h-64 overflow-y-auto">
+              {batchOrderResult.map((r, idx) => (
+                <div key={idx} className="flex items-center justify-between p-3 bg-gray-50 border border-gray-200">
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium text-gray-900 text-sm truncate">{r.partName}</div>
+                    <div className="text-xs text-gray-500">
+                      <span className="font-mono">{r.orderId}</span> · {r.supplier}
+                    </div>
+                  </div>
+                  <div className="text-sm font-bold text-accent-600 ml-3">
+                    {formatPrice(r.price)}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="flex justify-end gap-3">
+              <Button variant="secondary" onClick={() => setBatchOrderResult(null)}>
+                留在件源大厅
+              </Button>
+              <Button variant="accent" icon={<ShoppingCart className="w-4 h-4" />} onClick={() => {
+                setBatchOrderResult(null);
+                navigate('/orders');
+              }}>
+                去订单页查看
+              </Button>
+            </div>
+          </div>
         )}
       </Modal>
     </PageContainer>

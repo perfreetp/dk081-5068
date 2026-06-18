@@ -1,5 +1,6 @@
-import { useState } from 'react';
-import { Search, RefreshCw, AlertTriangle, CheckCircle, Clock, XCircle, ArrowRight, MessageSquare, Plus, Check, X, ThumbsUp, ThumbsDown } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Search, RefreshCw, AlertTriangle, CheckCircle, Clock, XCircle, ArrowRight, MessageSquare, Plus, Check, X, ThumbsUp, ThumbsDown, ArrowLeft } from 'lucide-react';
 import { PageContainer } from '@/components/Layout/PageContainer';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/common/Card';
 import { Button } from '@/components/common/Button';
@@ -17,7 +18,8 @@ import { AfterSaleStatusLabels, AfterSaleTypeLabels, type AfterSaleStatus, type 
 import { formatPrice, formatDate, formatDateTime } from '@/utils/format';
 
 export default function AfterSalesPage() {
-  const { afterSales, selectedAfterSaleId, setSelectedAfterSaleId, orders, createAfterSale, acceptAfterSale, rejectAfterSale, completeAfterSale } = useAppStore();
+  const navigate = useNavigate();
+  const { afterSales, selectedAfterSaleId, setSelectedAfterSaleId, orders, createAfterSale, acceptAfterSale, rejectAfterSale, completeAfterSale, pendingAfterSaleOrderId, setPendingAfterSaleOrderId } = useAppStore();
   const [activeTab, setActiveTab] = useState<AfterSaleStatus | 'all'>('all');
   const [searchKeyword, setSearchKeyword] = useState('');
   const [showDetailModal, setShowDetailModal] = useState(false);
@@ -34,6 +36,14 @@ export default function AfterSalesPage() {
   const [evidenceImages, setEvidenceImages] = useState<string[]>([]);
   const [rejectReason, setRejectReason] = useState('');
   const [handleNote, setHandleNote] = useState('');
+
+  useEffect(() => {
+    if (pendingAfterSaleOrderId) {
+      setSelectedOrderId(pendingAfterSaleOrderId);
+      setShowCreateModal(true);
+      setPendingAfterSaleOrderId(null);
+    }
+  }, [pendingAfterSaleOrderId, setPendingAfterSaleOrderId]);
 
   const filteredAfterSales = afterSales.filter(afterSale => {
     const matchesStatus = activeTab === 'all' || afterSale.status === activeTab;
@@ -432,7 +442,10 @@ export default function AfterSalesPage() {
               <Button variant="secondary" onClick={() => setShowDetailModal(false)}>
                 关闭
               </Button>
-              {selectedAfterSale.status === 'pending' && (
+              <Button variant="ghost" onClick={() => { setShowDetailModal(false); navigate('/orders'); }} icon={<ArrowLeft className="w-4 h-4" />}>
+                返回订单
+              </Button>
+              {(selectedAfterSale.status === 'pending' || selectedAfterSale.status === 'processing') && (
                 <>
                   <Button variant="danger" onClick={() => { setShowDetailModal(false); handleReject(selectedAfterSale.id); }} icon={<ThumbsDown className="w-4 h-4" />}>
                     拒绝申请
@@ -443,9 +456,14 @@ export default function AfterSalesPage() {
                 </>
               )}
               {selectedAfterSale.status === 'accepted' && (
-                <Button variant="accent" onClick={() => { setShowDetailModal(false); handleComplete(selectedAfterSale.id); }} icon={<Check className="w-4 h-4" />}>
-                  确认{selectedAfterSale.type === 'return' ? '退款' : selectedAfterSale.type === 'exchange' ? '换货发货' : '退款'}完成
-                </Button>
+                <>
+                  <Button variant="danger" onClick={() => { setShowDetailModal(false); handleReject(selectedAfterSale.id); }} icon={<ThumbsDown className="w-4 h-4" />}>
+                    驳回
+                  </Button>
+                  <Button variant="accent" onClick={() => { setShowDetailModal(false); handleComplete(selectedAfterSale.id); }} icon={<Check className="w-4 h-4" />}>
+                    确认{selectedAfterSale.type === 'return' ? '退款' : selectedAfterSale.type === 'exchange' ? '换货发货' : '退款'}完成
+                  </Button>
+                </>
               )}
               {selectedAfterSale.status === 'completed' && (
                 <Button

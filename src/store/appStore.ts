@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Quote, Order, AfterSale, PartCondition, PartCategory, InspectionItem, ChatMessage, AfterSaleType, OrderStatus, NegotiationRecord, AfterSaleTimelineItem } from '@/types';
+import type { Quote, Order, AfterSale, PartCondition, PartCategory, InspectionItem, ChatMessage, AfterSaleType, OrderStatus, NegotiationRecord, AfterSaleTimelineItem, OrderEvent, OrderEventType } from '@/types';
 import { mockQuotes, mockParts } from '@/data/mockParts';
 import { mockOrders } from '@/data/mockOrders';
 import { mockAfterSales } from '@/data/mockAfterSales';
@@ -39,9 +39,14 @@ interface AppState {
   inspections: Record<string, InspectionItem[]>;
   saveInspection: (orderId: string, items: InspectionItem[]) => void;
 
+  orderEvents: Record<string, OrderEvent[]>;
+  addOrderEvent: (orderId: string, type: OrderEventType, title: string, description: string, operator?: string) => void;
+
   afterSales: AfterSale[];
   selectedAfterSaleId: string | null;
   setSelectedAfterSaleId: (id: string | null) => void;
+  pendingAfterSaleOrderId: string | null;
+  setPendingAfterSaleOrderId: (id: string | null) => void;
   createAfterSale: (input: CreateAfterSaleInput) => string;
   createAfterSaleFromInspection: (orderId: string, items: InspectionItem[]) => string;
   acceptAfterSale: (afterSaleId: string, note?: string) => void;
@@ -119,6 +124,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const quote = get().quotes.find(q => q.id === quoteId);
     if (!quote) return '';
     const orderId = `ORD${Date.now()}`;
+    const now = new Date();
     const newOrder: Order = {
       id: orderId,
       quote,
@@ -135,15 +141,25 @@ export const useAppStore = create<AppState>((set, get) => ({
           content: `订单已创建，配件：${quote.part.name}，供应商：${quote.supplier.companyName}，金额 ${quote.price.toFixed(2)} 元，物流方式：${quote.shippingMethod}`,
           images: [],
           isPromise: false,
-          createdAt: new Date(),
+          createdAt: now,
         },
       ],
-      createdAt: new Date(),
+      createdAt: now,
       notes: `物流方式：${quote.shippingMethod}，预计${quote.deliveryDays}天到货`,
+    };
+    const createEvent: OrderEvent = {
+      id: genId('e'),
+      orderId,
+      type: 'created',
+      title: '订单创建',
+      description: `下单配件：${quote.part.name}，供应商：${quote.supplier.companyName}，金额 ${quote.price.toFixed(2)} 元`,
+      operator: mockBuyer.name,
+      time: now,
     };
     set((state) => ({
       orders: [newOrder, ...state.orders],
       selectedOrderId: orderId,
+      orderEvents: { ...state.orderEvents, [orderId]: [createEvent] },
     }));
     return orderId;
   },
@@ -201,6 +217,13 @@ export const useAppStore = create<AppState>((set, get) => ({
             }
           : o
       ),
+      orderEvents: {
+        ...state.orderEvents,
+        [orderId]: [
+          ...(state.orderEvents[orderId] || []),
+          { id: genId('e'), orderId, type: 'paid' as OrderEventType, title: '买家付款', description: `支付金额 ${get().orders.find(o => o.id === orderId)?.finalPrice.toFixed(2) ?? ''} 元`, operator: mockBuyer.name, time: now },
+        ],
+      },
     }));
   },
   shipOrder: (orderId, trackingCompany, trackingNumber) => {
@@ -230,6 +253,13 @@ export const useAppStore = create<AppState>((set, get) => ({
             }
           : o
       ),
+      orderEvents: {
+        ...state.orderEvents,
+        [orderId]: [
+          ...(state.orderEvents[orderId] || []),
+          { id: genId('e'), orderId, type: 'shipped' as OrderEventType, title: '商家发货', description: `物流公司：${trackingCompany}，运单号：${trackingNumber}`, operator: order.quote.supplier.companyName, time: now },
+        ],
+      },
     }));
   },
   deliverOrder: (orderId) => {
@@ -257,6 +287,13 @@ export const useAppStore = create<AppState>((set, get) => ({
             }
           : o
       ),
+      orderEvents: {
+        ...state.orderEvents,
+        [orderId]: [
+          ...(state.orderEvents[orderId] || []),
+          { id: genId('e'), orderId, type: 'delivered' as OrderEventType, title: '确认签收', description: '商品已送达，等待收货核验', operator: mockBuyer.name, time: now },
+        ],
+      },
     }));
   },
   completeOrder: (orderId) => {
@@ -283,19 +320,52 @@ export const useAppStore = create<AppState>((set, get) => ({
             }
           : o
       ),
+      orderEvents: {
+        ...state.orderEvents,
+        [orderId]: [
+          ...(state.orderEvents[orderId] || []),
+          { id: genId('e'), orderId, type: 'completed' as OrderEventType, title: '订单完成', description: '订单已完成', operator: mockBuyer.name, time: now },
+        ],
+      },
     }));
   },
 
   inspections: {},
   saveInspection: (orderId, items) => {
+    const passCount = items.filter(i => i.passed === true).length;
+    const failCount = items.filter(i => i.passed === false).length;
+    const now = new Date();
     set((state) => ({
       inspections: { ...state.inspections, [orderId]: items },
+      orderEvents: {
+        ...state.orderEvents,
+        [orderId]: [
+          ...(state.orderEvents[orderId] || []),
+          { id: genId('e'), orderId, type: 'inspected' as OrderEventType, title: '收货核验', description: `通过 ${passCount} 项，不通过 ${failCount} 项`, operator: mockBuyer.name, time: now },
+        ],
+      },
+    }));
+  },
+
+  orderEvents: {},
+  addOrderEvent: (orderId, type, title, description, operator = '系统') => {
+    const now = new Date();
+    set((state) => ({
+      orderEvents: {
+        ...state.orderEvents,
+        [orderId]: [
+          ...(state.orderEvents[orderId] || []),
+          { id: genId('e'), orderId, type, title, description, operator, time: now },
+        ],
+      },
     }));
   },
 
   afterSales: mockAfterSales,
   selectedAfterSaleId: null,
   setSelectedAfterSaleId: (id) => set({ selectedAfterSaleId: id }),
+  pendingAfterSaleOrderId: null,
+  setPendingAfterSaleOrderId: (id) => set({ pendingAfterSaleOrderId: id }),
   createAfterSale: (input) => {
     const order = get().orders.find(o => o.id === input.orderId);
     const id = `AS${Date.now()}`;
@@ -340,10 +410,18 @@ export const useAppStore = create<AppState>((set, get) => ({
       selectedAfterSaleId: id,
     }));
     if (order) {
+      const typeLabel = input.type === 'return' ? '退货退款' : input.type === 'exchange' ? '换货' : '仅退款';
       set((state) => ({
         orders: state.orders.map(o =>
           o.id === input.orderId ? { ...o, status: 'after_sale' as OrderStatus } : o
         ),
+        orderEvents: {
+          ...state.orderEvents,
+          [input.orderId]: [
+            ...(state.orderEvents[input.orderId] || []),
+            { id: genId('e'), orderId: input.orderId, type: 'after_sale' as OrderEventType, title: '发起售后', description: `发起${typeLabel}申请，售后单号 ${id.toUpperCase()}，原因：${input.reason}`, operator: mockBuyer.name, time: now },
+          ],
+        },
       }));
     }
     return id;
@@ -367,6 +445,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const now = new Date();
     const afterSale = get().afterSales.find(a => a.id === afterSaleId);
     if (!afterSale) return;
+    const typeLabel = afterSale.type === 'return' ? '退货退款' : afterSale.type === 'exchange' ? '换货' : '仅退款';
     const timelineItem: AfterSaleTimelineItem = {
       id: genId('t'),
       status: '商家已同意',
@@ -384,6 +463,13 @@ export const useAppStore = create<AppState>((set, get) => ({
           ? { ...a, status: 'accepted', timeline: [...a.timeline, timelineItem], updatedAt: now }
           : a
       ),
+      orderEvents: {
+        ...state.orderEvents,
+        [afterSale.orderId]: [
+          ...(state.orderEvents[afterSale.orderId] || []),
+          { id: genId('e'), orderId: afterSale.orderId, type: 'after_sale' as OrderEventType, title: '商家同意售后', description: `商家同意${typeLabel}申请${note ? `，备注：${note}` : ''}`, operator: afterSale.supplierName, time: now },
+        ],
+      },
     }));
   },
   rejectAfterSale: (afterSaleId, reason) => {
@@ -403,19 +489,23 @@ export const useAppStore = create<AppState>((set, get) => ({
           ? { ...a, status: 'rejected', timeline: [...a.timeline, timelineItem], updatedAt: now }
           : a
       ),
+      orders: state.orders.map(o =>
+        o.id === afterSale.orderId ? { ...o, status: 'completed' as OrderStatus } : o
+      ),
+      orderEvents: {
+        ...state.orderEvents,
+        [afterSale.orderId]: [
+          ...(state.orderEvents[afterSale.orderId] || []),
+          { id: genId('e'), orderId: afterSale.orderId, type: 'after_sale' as OrderEventType, title: '商家驳回售后', description: `商家驳回了售后申请，原因：${reason}`, operator: afterSale.supplierName, time: now },
+        ],
+      },
     }));
-    if (afterSale) {
-      set((state) => ({
-        orders: state.orders.map(o =>
-          o.id === afterSale.orderId ? { ...o, status: 'completed' as OrderStatus } : o
-        ),
-      }));
-    }
   },
   completeAfterSale: (afterSaleId, note) => {
     const now = new Date();
     const afterSale = get().afterSales.find(a => a.id === afterSaleId);
     if (!afterSale) return;
+    const typeLabel = afterSale.type === 'return' ? '退款' : afterSale.type === 'exchange' ? '换货' : '退款';
     const timelineItem: AfterSaleTimelineItem = {
       id: genId('t'),
       status: '售后已完成',
@@ -433,14 +523,17 @@ export const useAppStore = create<AppState>((set, get) => ({
           ? { ...a, status: 'completed', timeline: [...a.timeline, timelineItem], updatedAt: now }
           : a
       ),
+      orders: state.orders.map(o =>
+        o.id === afterSale.orderId ? { ...o, status: 'completed' as OrderStatus } : o
+      ),
+      orderEvents: {
+        ...state.orderEvents,
+        [afterSale.orderId]: [
+          ...(state.orderEvents[afterSale.orderId] || []),
+          { id: genId('e'), orderId: afterSale.orderId, type: 'after_sale' as OrderEventType, title: `${typeLabel}完成`, description: `售后${typeLabel}已完成${note ? `，备注：${note}` : ''}`, operator: '系统', time: now },
+        ],
+      },
     }));
-    if (afterSale) {
-      set((state) => ({
-        orders: state.orders.map(o =>
-          o.id === afterSale.orderId ? { ...o, status: 'completed' as OrderStatus } : o
-        ),
-      }));
-    }
   },
 
   inquiries: mockInquiries,
@@ -546,4 +639,27 @@ export function getAfterSaleById(afterSaleId: string) {
 
 export function getInspectionByOrderId(orderId: string) {
   return useAppStore.getState().inspections[orderId];
+}
+
+export function getOrderEventsByOrderId(orderId: string): OrderEvent[] {
+  const events = useAppStore.getState().orderEvents[orderId] || [];
+  if (events.length > 0) return events;
+  const order = useAppStore.getState().orders.find(o => o.id === orderId);
+  if (!order) return [];
+  const derived: OrderEvent[] = [
+    { id: 'd1', orderId, type: 'created', title: '订单创建', description: `下单配件：${order.quote.part.name}，供应商：${order.quote.supplier.companyName}`, operator: mockBuyer.name, time: order.createdAt },
+  ];
+  if (order.paidAt) {
+    derived.push({ id: 'd2', orderId, type: 'paid', title: '买家付款', description: `支付金额 ${order.finalPrice.toFixed(2)} 元`, operator: mockBuyer.name, time: order.paidAt });
+  }
+  if (order.shippedAt) {
+    derived.push({ id: 'd3', orderId, type: 'shipped', title: '商家发货', description: order.trackingNumber ? `物流公司：${order.trackingCompany}，运单号：${order.trackingNumber}` : '商家已发货', operator: order.quote.supplier.companyName, time: order.shippedAt });
+  }
+  if (order.actualDeliveryDate) {
+    derived.push({ id: 'd4', orderId, type: 'delivered', title: '确认签收', description: '商品已送达', operator: mockBuyer.name, time: order.actualDeliveryDate });
+  }
+  if (order.status === 'completed') {
+    derived.push({ id: 'd5', orderId, type: 'completed', title: '订单完成', description: '订单已完成', operator: mockBuyer.name, time: order.actualDeliveryDate || order.createdAt });
+  }
+  return derived;
 }

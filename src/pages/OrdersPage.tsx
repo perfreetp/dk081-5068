@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Package, Clock, Truck, CheckCircle, AlertTriangle, MessageSquare, FileText, Truck as TruckIcon, ClipboardCheck, CreditCard, Ship, ArrowRight } from 'lucide-react';
+import { Search, Package, Clock, Truck, CheckCircle, AlertTriangle, MessageSquare, FileText, Truck as TruckIcon, ClipboardCheck, CreditCard, Ship, ArrowRight, Download } from 'lucide-react';
 import { PageContainer } from '@/components/Layout/PageContainer';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/common/Card';
 import { Button } from '@/components/common/Button';
@@ -14,7 +14,7 @@ import { ChatPanel } from '@/components/business/ChatPanel';
 import { Timeline } from '@/components/business/Timeline';
 import { InspectionList } from '@/components/business/InspectionList';
 import { SupplierRating } from '@/components/business/SupplierRating';
-import { useAppStore, getOrderById, getInspectionByOrderId } from '@/store/appStore';
+import { useAppStore, getOrderById, getInspectionByOrderId, getOrderEventsByOrderId } from '@/store/appStore';
 import { mockLogisticsInfo } from '@/data/mockOrders';
 import { inspectionTemplates } from '@/data/mockAfterSales';
 import { OrderStatusLabels, type Order, type OrderStatus, type InspectionItem } from '@/types';
@@ -22,7 +22,7 @@ import { formatPrice, formatDateTime } from '@/utils/format';
 
 export default function OrdersPage() {
   const navigate = useNavigate();
-  const { orders, setSelectedOrderId, selectedOrderId, addChatMessage, saveInspection, createAfterSaleFromInspection, payOrder, shipOrder, deliverOrder, completeOrder } = useAppStore();
+  const { orders, setSelectedOrderId, selectedOrderId, addChatMessage, saveInspection, createAfterSaleFromInspection, payOrder, shipOrder, deliverOrder, completeOrder, setPendingAfterSaleOrderId } = useAppStore();
   const [activeTab, setActiveTab] = useState<OrderStatus | 'all'>('all');
   const [searchKeyword, setSearchKeyword] = useState('');
   const [showDetailModal, setShowDetailModal] = useState(false);
@@ -35,17 +35,63 @@ export default function OrdersPage() {
   const [inspectionItems, setInspectionItems] = useState<InspectionItem[]>([]);
   const [trackingCompany, setTrackingCompany] = useState('');
   const [trackingNumber, setTrackingNumber] = useState('');
+  const [supplierFilter, setSupplierFilter] = useState('all');
+  const [payDateFrom, setPayDateFrom] = useState('');
+  const [payDateTo, setPayDateTo] = useState('');
 
   const filteredOrders = orders.filter(order => {
     const matchesStatus = activeTab === 'all' || order.status === activeTab;
-    if (!searchKeyword) return matchesStatus;
-    const keyword = searchKeyword.toLowerCase();
-    return matchesStatus && (
-      order.id.toLowerCase().includes(keyword) ||
-      order.quote.part.name.toLowerCase().includes(keyword) ||
-      order.quote.supplier.companyName.toLowerCase().includes(keyword)
-    );
+    const matchesSupplier = supplierFilter === 'all' || order.quote.supplier.id === supplierFilter;
+    let matchesPayDate = true;
+    if (order.paidAt) {
+      if (payDateFrom && order.paidAt < new Date(payDateFrom)) matchesPayDate = false;
+      if (payDateTo) {
+        const toDate = new Date(payDateTo);
+        toDate.setHours(23, 59, 59, 999);
+        if (order.paidAt > toDate) matchesPayDate = false;
+      }
+    } else if (payDateFrom || payDateTo) {
+      matchesPayDate = false;
+    }
+    const matchesKeyword = !searchKeyword ||
+      order.id.toLowerCase().includes(searchKeyword.toLowerCase()) ||
+      order.quote.part.name.toLowerCase().includes(searchKeyword.toLowerCase()) ||
+      order.quote.supplier.companyName.toLowerCase().includes(searchKeyword.toLowerCase());
+    return matchesStatus && matchesSupplier && matchesPayDate && matchesKeyword;
   });
+
+  const supplierOptions = [
+    { value: 'all', label: '全部供应商' },
+    ...Array.from(new Set(orders.map(o => o.quote.supplier.id))).map(sid => {
+      const o = orders.find(o => o.quote.supplier.id === sid);
+      return { value: sid, label: o!.quote.supplier.companyName };
+    }),
+  ];
+
+  const handleExportCSV = () => {
+    const headers = ['订单号', '配件名称', 'OEM号', '供应商', '订单状态', '实付金额', '下单时间', '付款时间', '发货时间', '物流公司', '运单号'];
+    const rows = filteredOrders.map(o => [
+      o.id,
+      o.quote.part.name,
+      o.quote.part.oemNumber || '',
+      o.quote.supplier.companyName,
+      OrderStatusLabels[o.status],
+      o.finalPrice.toFixed(2),
+      formatDateTime(o.createdAt),
+      o.paidAt ? formatDateTime(o.paidAt) : '未付款',
+      o.shippedAt ? formatDateTime(o.shippedAt) : '未发货',
+      o.trackingCompany || '',
+      o.trackingNumber || '',
+    ]);
+    const csvContent = '\uFEFF' + [headers, ...rows].map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `订单对账_${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
 
   const selectedOrder = selectedOrderId ? getOrderById(selectedOrderId) : null;
 
@@ -143,6 +189,7 @@ export default function OrdersPage() {
   };
 
   const handleAfterSale = (orderId: string) => {
+    setPendingAfterSaleOrderId(orderId);
     navigate('/after-sales');
   };
 
@@ -171,6 +218,37 @@ export default function OrdersPage() {
               icon={Search}
               wrapperClassName="flex-1 min-w-[300px]"
             />
+            <Select
+              options={supplierOptions}
+              value={supplierFilter}
+              onChange={(e) => setSupplierFilter(e.target.value)}
+              className="min-w-[160px]"
+            />
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-gray-500 whitespace-nowrap">付款时间</span>
+              <input
+                type="date"
+                value={payDateFrom}
+                onChange={(e) => setPayDateFrom(e.target.value)}
+                className="px-3 py-2 border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+              />
+              <span className="text-gray-400">至</span>
+              <input
+                type="date"
+                value={payDateTo}
+                onChange={(e) => setPayDateTo(e.target.value)}
+                className="px-3 py-2 border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+              />
+            </div>
+            <Button
+              variant="outline"
+              size="md"
+              icon={<Download className="w-4 h-4" />}
+              onClick={handleExportCSV}
+              disabled={filteredOrders.length === 0}
+            >
+              导出CSV ({filteredOrders.length})
+            </Button>
           </div>
         </CardContent>
       </Card>
@@ -249,6 +327,7 @@ export default function OrdersPage() {
               <TabsList>
                 <TabsTrigger value="info">订单信息</TabsTrigger>
                 <TabsTrigger value="logistics">物流信息</TabsTrigger>
+                <TabsTrigger value="events">事件流</TabsTrigger>
                 <TabsTrigger value="chat">聊天记录</TabsTrigger>
                 <TabsTrigger value="inspection">收货核验</TabsTrigger>
                 <TabsTrigger value="adjustment">价格调整</TabsTrigger>
@@ -335,16 +414,55 @@ export default function OrdersPage() {
                             <div className="text-sm text-gray-600 font-mono">
                               {selectedOrder.trackingNumber}
                             </div>
+                            {selectedOrder.shippedAt && (
+                              <div className="text-xs text-gray-500 mt-1">
+                                发货时间：{formatDateTime(selectedOrder.shippedAt)}
+                              </div>
+                            )}
+                            {selectedOrder.actualDeliveryDate && (
+                              <div className="text-xs text-gray-500 mt-1">
+                                签收时间：{formatDateTime(selectedOrder.actualDeliveryDate)}
+                              </div>
+                            )}
+                          </div>
+                          <div className="ml-auto">
+                            <Badge variant={selectedOrder.actualDeliveryDate ? 'success' : 'info'}>
+                              {selectedOrder.actualDeliveryDate ? '已签收' : '运输中'}
+                            </Badge>
                           </div>
                         </div>
                         <Timeline
-                          items={mockLogisticsInfo.nodes.map(node => ({
-                            id: node.id,
-                            title: node.status,
-                            description: `${node.location} - ${node.description}`,
-                            time: node.time,
-                            status: 'completed' as const,
-                          }))}
+                          items={(() => {
+                            const nodes = [];
+                            if (selectedOrder.shippedAt) {
+                              nodes.push({
+                                id: 'ln1',
+                                title: '商家已发货',
+                                description: `${selectedOrder.quote.supplier.companyName} 已发货，物流公司：${selectedOrder.trackingCompany}`,
+                                time: selectedOrder.shippedAt,
+                                status: 'completed' as const,
+                              });
+                            }
+                            if (selectedOrder.actualDeliveryDate) {
+                              nodes.push({
+                                id: 'ln2',
+                                title: '已签收',
+                                description: `商品已送达，运单号 ${selectedOrder.trackingNumber}`,
+                                time: selectedOrder.actualDeliveryDate,
+                                status: 'completed' as const,
+                              });
+                            }
+                            if (nodes.length === 0) {
+                              nodes.push({
+                                id: 'ln0',
+                                title: '等待发货',
+                                description: '订单已支付，等待商家发货',
+                                time: selectedOrder.paidAt || selectedOrder.createdAt,
+                                status: 'completed' as const,
+                              });
+                            }
+                            return nodes;
+                          })()}
                         />
                       </div>
                     ) : (
@@ -353,6 +471,22 @@ export default function OrdersPage() {
                         <p>卖家尚未发货，暂无物流信息</p>
                       </div>
                     )}
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
+              <TabsContent value="events">
+                <Card>
+                  <CardContent className="p-6">
+                    <Timeline
+                      items={getOrderEventsByOrderId(selectedOrder.id).map(event => ({
+                        id: event.id,
+                        title: event.title,
+                        description: `${event.description} · 操作人：${event.operator}`,
+                        time: event.time,
+                        status: 'completed' as const,
+                      }))}
+                    />
                   </CardContent>
                 </Card>
               </TabsContent>

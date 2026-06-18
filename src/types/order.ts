@@ -37,6 +37,25 @@ export interface Order {
   notes?: string;
 }
 
+export type OrderEventType =
+  | 'created'
+  | 'paid'
+  | 'shipped'
+  | 'delivered'
+  | 'inspected'
+  | 'after_sale'
+  | 'completed';
+
+export interface OrderEvent {
+  id: string;
+  orderId: string;
+  type: OrderEventType;
+  title: string;
+  description: string;
+  operator: string;
+  time: Date;
+}
+
 export interface LogisticsNode {
   id: string;
   status: string;
