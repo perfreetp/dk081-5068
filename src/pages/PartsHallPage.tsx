@@ -16,6 +16,7 @@ import { mockInquiries } from '@/data/mockVehicles';
 import { PartConditionLabels, PartCategoryLabels } from '@/types';
 import type { PartCondition, PartCategory } from '@/types';
 import { formatPrice } from '@/utils/format';
+import { Layers, TrendingUp } from 'lucide-react';
 
 export default function PartsHallPage() {
   const navigate = useNavigate();
@@ -34,6 +35,7 @@ export default function PartsHallPage() {
     addNegotiationRecord,
     createOrderFromQuote,
     createOrdersFromQuotes,
+    setSelectedOrderId,
   } = useAppStore();
 
   const [searchKeyword, setSearchKeyword] = useState('');
@@ -400,13 +402,13 @@ export default function PartsHallPage() {
         open={!!batchOrderResult}
         onClose={() => setBatchOrderResult(null)}
         title="批量下单结果"
-        size="md"
+        size="lg"
       >
         {batchOrderResult && (
           <div className="space-y-6">
             <div className="p-4 bg-green-50 border border-green-200 flex items-center gap-3">
               <CheckCircle className="w-8 h-8 text-green-600 flex-shrink-0" />
-              <div>
+              <div className="flex-1">
                 <div className="font-medium text-gray-900">
                   成功生成 {batchOrderResult.length} 个订单
                 </div>
@@ -415,21 +417,71 @@ export default function PartsHallPage() {
                 </div>
               </div>
             </div>
-            <div className="space-y-2 max-h-64 overflow-y-auto">
-              {batchOrderResult.map((r, idx) => (
-                <div key={idx} className="flex items-center justify-between p-3 bg-gray-50 border border-gray-200">
-                  <div className="flex-1 min-w-0">
-                    <div className="font-medium text-gray-900 text-sm truncate">{r.partName}</div>
-                    <div className="text-xs text-gray-500">
-                      <span className="font-mono">{r.orderId}</span> · {r.supplier}
-                    </div>
-                  </div>
-                  <div className="text-sm font-bold text-accent-600 ml-3">
-                    {formatPrice(r.price)}
+
+            {(() => {
+              const bySupplier = batchOrderResult.reduce((acc, r) => {
+                if (!acc[r.supplier]) acc[r.supplier] = { count: 0, total: 0 };
+                acc[r.supplier].count += 1;
+                acc[r.supplier].total += r.price;
+                return acc;
+              }, {} as Record<string, { count: number; total: number }>);
+              const supplierEntries = Object.entries(bySupplier).sort((a, b) => b[1].total - a[1].total);
+              const maxTotal = supplierEntries[0]?.[1].total || 1;
+              return (
+                <div className="p-4 bg-gray-50 border border-gray-200">
+                  <h5 className="font-medium text-gray-900 mb-3 flex items-center gap-2">
+                    <Layers className="w-4 h-4 text-primary-600" />
+                    按供应商汇总
+                  </h5>
+                  <div className="space-y-2">
+                    {supplierEntries.map(([supplier, info]) => (
+                      <div key={supplier} className="flex items-center gap-3">
+                        <span className="text-sm text-gray-700 w-40 truncate">{supplier}</span>
+                        <div className="flex-1 h-6 bg-gray-200 relative">
+                          <div className="h-full bg-primary-500" style={{ width: `${(info.total / maxTotal) * 100}%` }} />
+                        </div>
+                        <span className="text-xs text-gray-500 w-16 text-right">{info.count} 单</span>
+                        <span className="text-sm font-medium text-accent-600 w-24 text-right">{formatPrice(info.total)}</span>
+                      </div>
+                    ))}
                   </div>
                 </div>
-              ))}
+              );
+            })()}
+
+            <div>
+              <h5 className="font-medium text-gray-900 mb-3 flex items-center gap-2">
+                <TrendingUp className="w-4 h-4 text-primary-600" />
+                订单明细（点击查看详情）
+              </h5>
+              <div className="space-y-2 max-h-64 overflow-y-auto">
+                {batchOrderResult.map((r, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => {
+                      setSelectedOrderId(r.orderId);
+                      setBatchOrderResult(null);
+                      navigate('/orders');
+                    }}
+                    className="w-full flex items-center justify-between p-3 bg-white border border-gray-200 hover:border-primary-400 hover:bg-primary-50 transition-colors text-left"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium text-gray-900 text-sm truncate">{r.partName}</div>
+                      <div className="text-xs text-gray-500">
+                        <span className="font-mono">{r.orderId}</span> · {r.supplier}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3 ml-3">
+                      <span className="text-sm font-bold text-accent-600">
+                        {formatPrice(r.price)}
+                      </span>
+                      <ShoppingCart className="w-4 h-4 text-gray-400" />
+                    </div>
+                  </button>
+                ))}
+              </div>
             </div>
+
             <div className="flex justify-end gap-3">
               <Button variant="secondary" onClick={() => setBatchOrderResult(null)}>
                 留在件源大厅
@@ -438,7 +490,7 @@ export default function PartsHallPage() {
                 setBatchOrderResult(null);
                 navigate('/orders');
               }}>
-                去订单页查看
+                去订单页查看全部
               </Button>
             </div>
           </div>

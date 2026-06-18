@@ -19,7 +19,7 @@ import { formatPrice, formatDate, formatDateTime } from '@/utils/format';
 
 export default function AfterSalesPage() {
   const navigate = useNavigate();
-  const { afterSales, selectedAfterSaleId, setSelectedAfterSaleId, orders, createAfterSale, acceptAfterSale, rejectAfterSale, completeAfterSale, pendingAfterSaleOrderId, setPendingAfterSaleOrderId } = useAppStore();
+  const { afterSales, selectedAfterSaleId, setSelectedAfterSaleId, orders, createAfterSale, acceptAfterSale, rejectAfterSale, completeAfterSale, pendingAfterSaleOrderId, setPendingAfterSaleOrderId, setSelectedOrderId: setStoreSelectedOrderId } = useAppStore();
   const [activeTab, setActiveTab] = useState<AfterSaleStatus | 'all'>('all');
   const [searchKeyword, setSearchKeyword] = useState('');
   const [showDetailModal, setShowDetailModal] = useState(false);
@@ -442,7 +442,7 @@ export default function AfterSalesPage() {
               <Button variant="secondary" onClick={() => setShowDetailModal(false)}>
                 关闭
               </Button>
-              <Button variant="ghost" onClick={() => { setShowDetailModal(false); navigate('/orders'); }} icon={<ArrowLeft className="w-4 h-4" />}>
+              <Button variant="ghost" onClick={() => { setShowDetailModal(false); setStoreSelectedOrderId(selectedAfterSale.orderId); navigate('/orders'); }} icon={<ArrowLeft className="w-4 h-4" />}>
                 返回订单
               </Button>
               {(selectedAfterSale.status === 'pending' || selectedAfterSale.status === 'processing') && (

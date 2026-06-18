@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Package, Clock, Truck, CheckCircle, AlertTriangle, MessageSquare, FileText, Truck as TruckIcon, ClipboardCheck, CreditCard, Ship, ArrowRight, Download } from 'lucide-react';
+import { Search, Package, Clock, Truck, CheckCircle, AlertTriangle, MessageSquare, FileText, Truck as TruckIcon, ClipboardCheck, CreditCard, Ship, ArrowRight, Download, MapPin, Lightbulb, ChevronRight } from 'lucide-react';
 import { PageContainer } from '@/components/Layout/PageContainer';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/common/Card';
 import { Button } from '@/components/common/Button';
@@ -14,7 +14,7 @@ import { ChatPanel } from '@/components/business/ChatPanel';
 import { Timeline } from '@/components/business/Timeline';
 import { InspectionList } from '@/components/business/InspectionList';
 import { SupplierRating } from '@/components/business/SupplierRating';
-import { useAppStore, getOrderById, getInspectionByOrderId, getOrderEventsByOrderId } from '@/store/appStore';
+import { useAppStore, getOrderById, getInspectionByOrderId, getOrderEventsByOrderId, getAfterSalesByOrderId } from '@/store/appStore';
 import { mockLogisticsInfo } from '@/data/mockOrders';
 import { inspectionTemplates } from '@/data/mockAfterSales';
 import { OrderStatusLabels, type Order, type OrderStatus, type InspectionItem } from '@/types';
@@ -35,9 +35,22 @@ export default function OrdersPage() {
   const [inspectionItems, setInspectionItems] = useState<InspectionItem[]>([]);
   const [trackingCompany, setTrackingCompany] = useState('');
   const [trackingNumber, setTrackingNumber] = useState('');
-  const [supplierFilter, setSupplierFilter] = useState('all');
-  const [payDateFrom, setPayDateFrom] = useState('');
-  const [payDateTo, setPayDateTo] = useState('');
+  const [supplierFilter, setSupplierFilter] = useState(() => localStorage.getItem('orders_supplierFilter') || 'all');
+  const [payDateFrom, setPayDateFrom] = useState(() => localStorage.getItem('orders_payDateFrom') || '');
+  const [payDateTo, setPayDateTo] = useState(() => localStorage.getItem('orders_payDateTo') || '');
+
+  useEffect(() => { localStorage.setItem('orders_supplierFilter', supplierFilter); }, [supplierFilter]);
+  useEffect(() => { localStorage.setItem('orders_payDateFrom', payDateFrom); }, [payDateFrom]);
+  useEffect(() => { localStorage.setItem('orders_payDateTo', payDateTo); }, [payDateTo]);
+
+  const resetAccountingFilters = () => {
+    setSupplierFilter('all');
+    setPayDateFrom('');
+    setPayDateTo('');
+    localStorage.removeItem('orders_supplierFilter');
+    localStorage.removeItem('orders_payDateFrom');
+    localStorage.removeItem('orders_payDateTo');
+  };
 
   const filteredOrders = orders.filter(order => {
     const matchesStatus = activeTab === 'all' || order.status === activeTab;
@@ -69,20 +82,35 @@ export default function OrdersPage() {
   ];
 
   const handleExportCSV = () => {
-    const headers = ['订单号', '配件名称', 'OEM号', '供应商', '订单状态', '实付金额', '下单时间', '付款时间', '发货时间', '物流公司', '运单号'];
-    const rows = filteredOrders.map(o => [
-      o.id,
-      o.quote.part.name,
-      o.quote.part.oemNumber || '',
-      o.quote.supplier.companyName,
-      OrderStatusLabels[o.status],
-      o.finalPrice.toFixed(2),
-      formatDateTime(o.createdAt),
-      o.paidAt ? formatDateTime(o.paidAt) : '未付款',
-      o.shippedAt ? formatDateTime(o.shippedAt) : '未发货',
-      o.trackingCompany || '',
-      o.trackingNumber || '',
-    ]);
+    const headers = ['订单号', '配件名称', 'OEM号', '供应商', '供应商联系人', '供应商电话', '订单状态', '实付金额', '物流方式', '下单时间', '付款时间', '发货时间', '物流公司', '运单号', '售后状态'];
+    const rows = filteredOrders.map(o => {
+      const orderAfterSales = getAfterSalesByOrderId(o.id);
+      const latestAF = orderAfterSales[0];
+      const afterSaleStatus = latestAF
+        ? latestAF.status === 'pending' ? '售后待处理'
+        : latestAF.status === 'processing' ? '售后处理中'
+        : latestAF.status === 'accepted' ? '售后已通过'
+        : latestAF.status === 'completed' ? '售后已完成'
+        : '售后已驳回'
+        : '无售后';
+      return [
+        o.id,
+        o.quote.part.name,
+        o.quote.part.oemNumber || '',
+        o.quote.supplier.companyName,
+        o.quote.supplier.contact,
+        o.quote.supplier.phone,
+        OrderStatusLabels[o.status],
+        o.finalPrice.toFixed(2),
+        o.quote.shippingMethod,
+        formatDateTime(o.createdAt),
+        o.paidAt ? formatDateTime(o.paidAt) : '未付款',
+        o.shippedAt ? formatDateTime(o.shippedAt) : '未发货',
+        o.trackingCompany || '',
+        o.trackingNumber || '',
+        afterSaleStatus,
+      ];
+    });
     const csvContent = '\uFEFF' + [headers, ...rows].map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -210,6 +238,14 @@ export default function OrdersPage() {
     >
       <Card className="mb-6">
         <CardContent className="p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <span className="text-xs text-gray-500">对账筛选</span>
+            {(supplierFilter !== 'all' || payDateFrom || payDateTo) && (
+              <span className="text-xs text-green-600 flex items-center gap-1">
+                <CheckCircle className="w-3 h-3" /> 已保存
+              </span>
+            )}
+          </div>
           <div className="flex flex-wrap gap-4 items-center">
             <Input
               placeholder="搜索订单号、配件名称、供应商..."
@@ -240,6 +276,11 @@ export default function OrdersPage() {
                 className="px-3 py-2 border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
               />
             </div>
+            {(supplierFilter !== 'all' || payDateFrom || payDateTo) && (
+              <Button variant="ghost" size="md" onClick={resetAccountingFilters}>
+                清除筛选
+              </Button>
+            )}
             <Button
               variant="outline"
               size="md"
@@ -322,6 +363,82 @@ export default function OrdersPage() {
                 <div className="text-2xl font-bold text-accent-600">{formatPrice(selectedOrder.finalPrice)}</div>
               </div>
             </div>
+
+            {(() => {
+              const steps = [
+                { key: 'created', label: '下单', done: true, time: selectedOrder.createdAt },
+                { key: 'paid', label: '付款', done: !!selectedOrder.paidAt, time: selectedOrder.paidAt },
+                { key: 'shipped', label: '发货', done: !!selectedOrder.shippedAt, time: selectedOrder.shippedAt },
+                { key: 'delivered', label: '签收', done: !!selectedOrder.actualDeliveryDate, time: selectedOrder.actualDeliveryDate },
+                { key: 'inspected', label: '核验', done: !!getInspectionByOrderId(selectedOrder.id), time: null },
+                { key: 'completed', label: '完成', done: selectedOrder.status === 'completed', time: selectedOrder.status === 'completed' ? (selectedOrder.actualDeliveryDate || selectedOrder.shippedAt || selectedOrder.paidAt || selectedOrder.createdAt) : null },
+              ];
+              const currentIdx = steps.findIndex(s => !s.done);
+              const currentStep = currentIdx >= 0 ? steps[currentIdx] : steps[steps.length - 1];
+              const nextHint: Record<string, string> = {
+                created: '买家待付款，请尽快完成支付',
+                paid: '已付款，等待商家发货并填写物流单号',
+                shipped: '已发货，请留意物流进度并确认签收',
+                delivered: '已签收，请尽快完成收货核验',
+                inspected: '核验完成，确认无误后可完结订单',
+                completed: '订单已完成全部履约流程',
+              };
+              const relatedAfterSales = getAfterSalesByOrderId(selectedOrder.id);
+              const isAfterSaleActive = selectedOrder.status === 'after_sale' || relatedAfterSales.some(a => a.status === 'pending' || a.status === 'processing' || a.status === 'accepted');
+              return (
+                <div className="p-4 bg-white border border-gray-200">
+                  <div className="flex items-center justify-between mb-3">
+                    <h4 className="font-medium text-gray-900 flex items-center gap-2">
+                      <MapPin className="w-4 h-4 text-primary-600" />
+                      履约进度
+                    </h4>
+                    {isAfterSaleActive && (
+                      <Badge variant="danger">售后处理中</Badge>
+                    )}
+                  </div>
+                  <div className="flex items-center">
+                    {steps.map((step, idx) => {
+                      const isLast = idx === steps.length - 1;
+                      return (
+                        <div key={step.key} className="flex items-center flex-1 last:flex-none">
+                          <div className="flex flex-col items-center">
+                            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium ${step.done ? 'bg-green-500 text-white' : idx === currentIdx ? 'bg-primary-500 text-white ring-4 ring-primary-100' : 'bg-gray-100 text-gray-400'}`}>
+                              {step.done ? <CheckCircle className="w-4 h-4" /> : idx + 1}
+                            </div>
+                            <span className={`mt-1 text-xs ${step.done || idx === currentIdx ? 'text-gray-900 font-medium' : 'text-gray-400'}`}>{step.label}</span>
+                          </div>
+                          {!isLast && (
+                            <div className={`flex-1 h-0.5 mx-2 ${step.done ? 'bg-green-500' : 'bg-gray-200'}`} />
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="mt-3 p-3 bg-primary-50 border border-primary-100 flex items-start gap-2">
+                    <Lightbulb className="w-4 h-4 text-primary-600 flex-shrink-0 mt-0.5" />
+                    <div className="text-sm text-gray-700">
+                      <span className="text-gray-500">当前卡在</span>
+                      <span className="font-medium text-primary-700 mx-1">{currentStep.label}</span>
+                      <span className="text-gray-500">·</span>
+                      <span className="ml-1">{nextHint[currentStep.key]}</span>
+                    </div>
+                  </div>
+                  {relatedAfterSales.length > 0 && (
+                    <div className="mt-3 p-3 bg-orange-50 border border-orange-200">
+                      <div className="text-sm font-medium text-gray-900 mb-2">关联售后单（{relatedAfterSales.length}）</div>
+                      {relatedAfterSales.map(af => (
+                        <div key={af.id} className="flex items-center justify-between text-sm py-1">
+                          <span className="font-mono text-gray-600">{af.id}</span>
+                          <Badge variant={af.status === 'completed' ? 'success' : af.status === 'rejected' ? 'danger' : 'warning'}>
+                            {af.status === 'pending' ? '待处理' : af.status === 'processing' ? '处理中' : af.status === 'accepted' ? '已通过' : af.status === 'completed' ? '已完成' : '已驳回'}
+                          </Badge>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
 
             <Tabs value={activeDetailTab} onValueChange={setActiveDetailTab}>
               <TabsList>
@@ -434,31 +551,40 @@ export default function OrdersPage() {
                         <Timeline
                           items={(() => {
                             const nodes = [];
+                            if (selectedOrder.paidAt) {
+                              nodes.push({
+                                id: 'ln0',
+                                status: '买家已付款',
+                                description: `买家已完成付款，等待商家发货`,
+                                time: selectedOrder.paidAt,
+                                isCompleted: true,
+                              });
+                            }
                             if (selectedOrder.shippedAt) {
                               nodes.push({
                                 id: 'ln1',
-                                title: '商家已发货',
-                                description: `${selectedOrder.quote.supplier.companyName} 已发货，物流公司：${selectedOrder.trackingCompany}`,
+                                status: '商家已发货',
+                                description: `${selectedOrder.quote.supplier.companyName} 已发货，物流公司：${selectedOrder.trackingCompany}，运单号：${selectedOrder.trackingNumber}`,
                                 time: selectedOrder.shippedAt,
-                                status: 'completed' as const,
+                                isCompleted: true,
                               });
                             }
                             if (selectedOrder.actualDeliveryDate) {
                               nodes.push({
                                 id: 'ln2',
-                                title: '已签收',
-                                description: `商品已送达，运单号 ${selectedOrder.trackingNumber}`,
+                                status: '买家已签收',
+                                description: `商品已送达签收`,
                                 time: selectedOrder.actualDeliveryDate,
-                                status: 'completed' as const,
+                                isCompleted: true,
                               });
                             }
                             if (nodes.length === 0) {
                               nodes.push({
-                                id: 'ln0',
-                                title: '等待发货',
-                                description: '订单已支付，等待商家发货',
-                                time: selectedOrder.paidAt || selectedOrder.createdAt,
-                                status: 'completed' as const,
+                                id: 'lnw',
+                                status: '等待发货',
+                                description: '订单待付款，付款后商家将尽快发货',
+                                time: selectedOrder.createdAt,
+                                isCurrent: true,
                               });
                             }
                             return nodes;
@@ -477,14 +603,37 @@ export default function OrdersPage() {
 
               <TabsContent value="events">
                 <Card>
-                  <CardContent className="p-6">
+                  <CardContent className="p-6 space-y-4">
+                    {(() => {
+                      const relatedAFs = getAfterSalesByOrderId(selectedOrder.id);
+                      if (relatedAFs.length > 0) {
+                        const latest = relatedAFs[0];
+                        const statusText = latest.status === 'pending' ? '待商家处理' : latest.status === 'processing' ? '处理中' : latest.status === 'accepted' ? '商家已通过' : latest.status === 'completed' ? '售后已完成' : '商家已驳回';
+                        return (
+                          <div className="p-3 bg-orange-50 border border-orange-200 flex items-center justify-between">
+                            <div className="text-sm">
+                              <span className="text-gray-500">售后最新状态：</span>
+                              <span className="font-medium text-orange-700 ml-1">{statusText}</span>
+                              <span className="text-gray-400 mx-2">·</span>
+                              <span className="text-gray-500">售后单号</span>
+                              <span className="font-mono text-gray-700 ml-1">{latest.id}</span>
+                            </div>
+                            <Button variant="outline" size="sm" onClick={() => { setShowDetailModal(false); navigate('/after-sales'); }}>
+                              查看售后详情 <ChevronRight className="w-3 h-3" />
+                            </Button>
+                          </div>
+                        );
+                      }
+                      return null;
+                    })()}
                     <Timeline
-                      items={getOrderEventsByOrderId(selectedOrder.id).map(event => ({
+                      items={getOrderEventsByOrderId(selectedOrder.id).map((event, idx, arr) => ({
                         id: event.id,
-                        title: event.title,
+                        status: event.title,
                         description: `${event.description} · 操作人：${event.operator}`,
                         time: event.time,
-                        status: 'completed' as const,
+                        isCompleted: true,
+                        isCurrent: idx === arr.length - 1 && event.type === 'after_sale',
                       }))}
                     />
                   </CardContent>
@@ -587,40 +736,61 @@ export default function OrdersPage() {
               </TabsContent>
             </Tabs>
 
-            <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
-              <Button variant="secondary" onClick={() => setShowDetailModal(false)}>
-                关闭
-              </Button>
-              {selectedOrder.status === 'pending_payment' && (
-                <Button variant="accent" onClick={() => { setShowDetailModal(false); handlePay(selectedOrder.id); }}>
-                  立即付款
+            <div className="p-4 bg-gray-50 border border-gray-200">
+              <div className="flex items-center justify-between mb-3">
+                <h5 className="font-medium text-gray-900 flex items-center gap-2">
+                  <ChevronRight className="w-4 h-4 text-primary-600" />
+                  履约操作
+                </h5>
+                <span className="text-xs text-gray-500">
+                  {selectedOrder.status === 'pending_payment' && '下一步：立即付款'}
+                  {selectedOrder.status === 'pending_shipment' && '下一步：模拟商家发货'}
+                  {selectedOrder.status === 'shipped' && '下一步：确认收货'}
+                  {selectedOrder.status === 'delivered' && '下一步：收货核验'}
+                  {selectedOrder.status === 'completed' && '订单已完成，可评价供应商'}
+                  {selectedOrder.status === 'after_sale' && '售后处理中'}
+                </span>
+              </div>
+              <div className="flex flex-wrap justify-end gap-3">
+                <Button variant="secondary" onClick={() => setShowDetailModal(false)}>
+                  关闭
                 </Button>
-              )}
-              {selectedOrder.status === 'pending_shipment' && (
-                <Button variant="accent" onClick={() => { setShowDetailModal(false); handleShip(selectedOrder.id); }}>
-                  模拟发货
-                </Button>
-              )}
-              {selectedOrder.status === 'shipped' && (
-                <Button variant="accent" onClick={() => { handleDeliver(selectedOrder.id); }}>
-                  确认收货
-                </Button>
-              )}
-              {selectedOrder.status === 'delivered' && (
-                <>
-                  <Button variant="outline" onClick={() => { setShowDetailModal(false); handleInspection(selectedOrder.id); }}>
-                    收货核验
+                {selectedOrder.status === 'pending_payment' && (
+                  <Button variant="accent" onClick={() => { setShowDetailModal(false); handlePay(selectedOrder.id); }} icon={<CreditCard className="w-4 h-4" />}>
+                    立即付款
                   </Button>
-                  <Button variant="accent" onClick={() => { setShowDetailModal(false); handleAfterSale(selectedOrder.id); }}>
-                    发起售后
+                )}
+                {selectedOrder.status === 'pending_shipment' && (
+                  <Button variant="accent" onClick={() => { setShowDetailModal(false); handleShip(selectedOrder.id); }} icon={<Ship className="w-4 h-4" />}>
+                    模拟发货
                   </Button>
-                </>
-              )}
-              {selectedOrder.status === 'completed' && (
-                <Button variant="primary" onClick={() => { setShowDetailModal(false); handleRating(selectedOrder.id); }}>
-                  评价供应商
-                </Button>
-              )}
+                )}
+                {selectedOrder.status === 'shipped' && (
+                  <Button variant="accent" onClick={() => { handleDeliver(selectedOrder.id); }} icon={<Truck className="w-4 h-4" />}>
+                    确认收货
+                  </Button>
+                )}
+                {selectedOrder.status === 'delivered' && (
+                  <>
+                    <Button variant="outline" onClick={() => { setShowDetailModal(false); handleInspection(selectedOrder.id); }} icon={<ClipboardCheck className="w-4 h-4" />}>
+                      收货核验
+                    </Button>
+                    <Button variant="accent" onClick={() => { setShowDetailModal(false); handleAfterSale(selectedOrder.id); }} icon={<AlertTriangle className="w-4 h-4" />}>
+                      发起售后
+                    </Button>
+                  </>
+                )}
+                {selectedOrder.status === 'completed' && (
+                  <Button variant="primary" onClick={() => { setShowDetailModal(false); handleRating(selectedOrder.id); }}>
+                    评价供应商
+                  </Button>
+                )}
+                {(selectedOrder.status === 'shipped' || selectedOrder.status === 'delivered' || selectedOrder.status === 'completed') && (
+                  <Button variant="ghost" onClick={() => { setShowDetailModal(false); handleAfterSale(selectedOrder.id); }} icon={<AlertTriangle className="w-4 h-4" />}>
+                    申请售后
+                  </Button>
+                )}
+              </div>
             </div>
           </div>
         )}

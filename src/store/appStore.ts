@@ -82,6 +82,13 @@ interface AppState {
 
 let idCounter = 1000;
 const genId = (prefix: string) => `${prefix}${Date.now()}${idCounter++}`;
+let orderCounter = 0;
+const genOrderId = () => {
+  orderCounter += 1;
+  const ts = Date.now().toString().slice(-8);
+  const rand = Math.floor(Math.random() * 9000 + 1000);
+  return `ORD${ts}${rand}${orderCounter.toString().padStart(3, '0')}`;
+};
 
 export const useAppStore = create<AppState>((set, get) => ({
   currentPage: 'inquiry',
@@ -123,7 +130,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   createOrderFromQuote: (quoteId) => {
     const quote = get().quotes.find(q => q.id === quoteId);
     if (!quote) return '';
-    const orderId = `ORD${Date.now()}`;
+    const orderId = genOrderId();
     const now = new Date();
     const newOrder: Order = {
       id: orderId,
@@ -635,6 +642,10 @@ export function getOrderById(orderId: string) {
 
 export function getAfterSaleById(afterSaleId: string) {
   return useAppStore.getState().afterSales.find(a => a.id === afterSaleId);
+}
+
+export function getAfterSalesByOrderId(orderId: string) {
+  return useAppStore.getState().afterSales.filter(a => a.orderId === orderId);
 }
 
 export function getInspectionByOrderId(orderId: string) {
